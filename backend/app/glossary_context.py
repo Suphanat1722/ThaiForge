@@ -65,8 +65,9 @@ def build_candidate_contexts(
         )
         for row in rows:
             source_text = row["source_text"]
+            searchable_text = clean_for_glossary(source_text)
             for candidate in candidates:
-                if not term_matches(source_text, candidate["s"]):
+                if not term_matches(searchable_text, candidate["s"]):
                     continue
                 candidate["count"] += 1
                 if len(candidate["x"]) >= MAX_CONTEXT_EXAMPLES:
@@ -101,6 +102,9 @@ def build_candidate_contexts(
             "x": candidate["x"],
         }
         for candidate in candidates
+        # Never allow prompt examples, context-only values, or model inventions
+        # to become AI-generated Glossary entries.
+        if candidate["count"] > 0
     ]
 
 

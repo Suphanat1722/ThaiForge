@@ -33,6 +33,11 @@ class ContextRefiningGemini:
                         target_term="คาเรน",
                         note="ตัวละคร",
                     ),
+                    GlossarySuggestion(
+                        source_term="Turbojolt XL",
+                        target_term="เทอร์โบจอลต์ XL",
+                        note="ไม่มีใน corpus",
+                    ),
                 ]
             )
         )
@@ -52,6 +57,13 @@ class ContextRefiningGemini:
                     note=candidate["n"],
                 )
             )
+        refined.append(
+            GlossarySuggestion(
+                source_term="Invented During Refinement",
+                target_term="คำที่แต่งเพิ่ม",
+                note="ไม่มีใน candidate หรือ corpus",
+            )
+        )
         return AiResult(value=GlossaryOutput(glossary=refined))
 
 
@@ -112,6 +124,13 @@ def test_refinement_corrects_milk_and_is_reused_from_cache_across_jobs():
         assert run_once(service=fake)
 
         first_entries = client.get(f"/api/jobs/{first}/glossary").json()["entries"]
+        assert all(
+            entry["source_term"] != "Turbojolt XL" for entry in first_entries
+        )
+        assert all(
+            entry["source_term"] != "Invented During Refinement"
+            for entry in first_entries
+        )
         milk = next(entry for entry in first_entries if entry["source_term"] == "Milk")
         assert milk["target_term"] == "นม"
         sent_milk = next(
@@ -119,6 +138,9 @@ def test_refinement_corrects_milk_and_is_reused_from_cache_across_jobs():
         )
         assert sent_milk["count"] == 4
         assert len(sent_milk["x"]) == 4
+        assert all(
+            item["s"] != "Turbojolt XL" for item in fake.refinement_candidates
+        )
         assert fake.extraction_calls == 1
         assert fake.refinement_calls == 1
 
@@ -126,6 +148,13 @@ def test_refinement_corrects_milk_and_is_reused_from_cache_across_jobs():
         client.post(f"/api/jobs/{second}/glossary/generate")
         assert run_once(service=fake)
         second_entries = client.get(f"/api/jobs/{second}/glossary").json()["entries"]
+        assert all(
+            entry["source_term"] != "Turbojolt XL" for entry in second_entries
+        )
+        assert all(
+            entry["source_term"] != "Invented During Refinement"
+            for entry in second_entries
+        )
         second_milk = next(
             entry for entry in second_entries if entry["source_term"] == "Milk"
         )
@@ -143,6 +172,7 @@ def test_refinement_failure_keeps_extracted_candidates_for_manual_review():
 
         job = client.get(f"/api/jobs/{job_id}").json()
         entries = client.get(f"/api/jobs/{job_id}/glossary").json()["entries"]
+        assert all(entry["source_term"] != "Turbojolt XL" for entry in entries)
         milk = next(entry for entry in entries if entry["source_term"] == "Milk")
 
     assert job["status"] == "awaiting_review"

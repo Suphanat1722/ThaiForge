@@ -175,7 +175,7 @@ def _glossary_chunk_key(
     glossary_rules: list[str] | None = None,
 ) -> str:
     payload = {
-        "policy": "glossary-candidate-v5-four-modes",
+        "policy": "glossary-candidate-v6-corpus-validated",
         "model": get_settings().gemini_model,
         "source_lang": job["source_lang"],
         "target_lang": job["target_lang"],
@@ -197,7 +197,7 @@ def _glossary_refinement_key(
     glossary_rules: list[str] | None = None,
 ) -> str:
     payload = {
-        "policy": "glossary-context-refinement-v3-four-modes",
+        "policy": "glossary-context-refinement-v4-corpus-validated",
         "model": get_settings().gemini_model,
         "source_lang": job["source_lang"],
         "target_lang": job["target_lang"],
@@ -396,6 +396,15 @@ def _process_glossary_job(job: dict, service: GeminiService | None = None) -> No
 
     suggestions, merged_style_rules = _merge_glossary_outputs(outputs)
     context_candidates = build_candidate_contexts(job["id"], suggestions)
+    suggestions = [
+        (
+            candidate["s"],
+            candidate["t"],
+            candidate["n"],
+            candidate["m"],
+        )
+        for candidate in context_candidates
+    ]
     refinement_chunks = (
         [] if quota_blocked else chunk_candidate_contexts(context_candidates)
     )
@@ -509,6 +518,20 @@ def _process_glossary_job(job: dict, service: GeminiService | None = None) -> No
 
     if refinement_chunks and len(refined_outputs) == len(refinement_chunks):
         suggestions, _ignored_styles = _merge_glossary_outputs(refined_outputs)
+        corpus_sources = {
+            normalize_term(candidate["s"]): candidate["s"]
+            for candidate in context_candidates
+        }
+        suggestions = [
+            (
+                corpus_sources[normalize_term(source)],
+                target,
+                note,
+                mode,
+            )
+            for source, target, note, mode in suggestions
+            if normalize_term(source) in corpus_sources
+        ]
 
     now = utc_now()
 

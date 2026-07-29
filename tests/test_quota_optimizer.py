@@ -122,8 +122,7 @@ def test_glossary_refinement_sends_corpus_context_and_rejects_new_terms():
     assert "Cows produce milk" in Client.models.contents
     assert "ชื่อปุ่มควบคุมให้คงอักษรละติน" in Client.models.contents
     assert "Select Button" in Client.models.contents
-    assert "Turbojolt XL" in Client.models.contents
-    assert "เทอร์โบจอลต์ XL" in Client.models.contents
+    assert "Turbojolt XL" not in Client.models.contents
     assert '"m":"mixed"' in Client.models.contents
     assert "ตัวพิมพ์ใหญ่" in Client.models.contents
     assert Client.models.config.thinking_config.thinking_level.value == "LOW"

@@ -406,9 +406,9 @@ def test_glossary_generation_covers_multiple_chunks_and_can_regenerate(monkeypat
 
         job = client.get(f"/api/jobs/{job_id}").json()
         assert job["status"] == "awaiting_review"
-        assert job["glossary_chunks_total"] == 4
-        assert job["glossary_chunks_completed"] == 4
-        assert fake.calls == 4
+        assert job["glossary_chunks_total"] == 3
+        assert job["glossary_chunks_completed"] == 3
+        assert fake.calls == 3
 
         regenerated = client.post(f"/api/jobs/{job_id}/glossary/generate")
         assert regenerated.status_code == 202
@@ -416,7 +416,7 @@ def test_glossary_generation_covers_multiple_chunks_and_can_regenerate(monkeypat
         refreshed = client.get(f"/api/jobs/{job_id}").json()
         assert refreshed["status"] == "awaiting_review"
         assert refreshed["glossary_revision"] == 2
-        assert fake.calls == 4
+        assert fake.calls == 3
 
 
 def test_glossary_search_filters_and_pagination_are_backward_compatible():
