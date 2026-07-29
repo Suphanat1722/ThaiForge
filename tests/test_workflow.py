@@ -57,6 +57,23 @@ class FakeGemini:
             output_tokens=20,
         )
 
+    def refine_glossary(self, candidates, source_lang, target_lang):
+        self.calls += 1
+        return AiResult(
+            value=GlossaryOutput(
+                glossary=[
+                    GlossarySuggestion(
+                        source_term=item["s"],
+                        target_term=item["t"],
+                        note=item["n"],
+                    )
+                    for item in candidates
+                ]
+            ),
+            input_tokens=40,
+            output_tokens=10,
+        )
+
 class BrokenTokenGemini(FakeGemini):
     def translate_batch(
         self, rows, source_lang, target_lang, glossary_entries, style_rules
@@ -238,7 +255,7 @@ def test_tokens_are_rebuilt_locally_without_repair_calls():
         placeholder_row = next(row for row in rows if "{name}" in row["source_text"])
         assert placeholder_row["status"] == "done"
         assert "{name}" in placeholder_row["translated_text"]
-        assert fake.calls == 2  # glossary and one translation batch
+        assert fake.calls == 3  # extraction, context refinement, translation
 
 
 def test_permanent_failure_is_not_retried_and_does_not_spend_more_quota():
@@ -293,7 +310,7 @@ def test_missing_segments_get_one_batched_retry_then_fail():
 
         status = client.get(f"/api/jobs/{job_id}/status").json()
         assert status["counts"]["failed"] == 2
-        assert fake.calls == 3  # glossary plus two batched translation attempts
+        assert fake.calls == 4  # extraction, refinement, and two translation attempts
 
 
 def test_scan_confirmation_rejects_changed_glossary_revision():
@@ -345,9 +362,9 @@ def test_glossary_generation_covers_multiple_chunks_and_can_regenerate(monkeypat
 
         job = client.get(f"/api/jobs/{job_id}").json()
         assert job["status"] == "awaiting_review"
-        assert job["glossary_chunks_total"] == 3
-        assert job["glossary_chunks_completed"] == 3
-        assert fake.calls == 3
+        assert job["glossary_chunks_total"] == 4
+        assert job["glossary_chunks_completed"] == 4
+        assert fake.calls == 4
 
         regenerated = client.post(f"/api/jobs/{job_id}/glossary/generate")
         assert regenerated.status_code == 202
@@ -355,7 +372,7 @@ def test_glossary_generation_covers_multiple_chunks_and_can_regenerate(monkeypat
         refreshed = client.get(f"/api/jobs/{job_id}").json()
         assert refreshed["status"] == "awaiting_review"
         assert refreshed["glossary_revision"] == 2
-        assert fake.calls == 3
+        assert fake.calls == 4
 
 
 def test_glossary_search_filters_and_pagination_are_backward_compatible():

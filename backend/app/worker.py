@@ -21,6 +21,7 @@ from .gemini_service import (
     GeminiService,
     GeminiTransientError,
 )
+from .glossary_context import build_candidate_contexts, chunk_candidate_contexts
 from .logging_config import configure_logging
 from .repository import (
     get_job,
@@ -153,11 +154,23 @@ def _source_chunks(job_id: str) -> list[list[str]]:
 
 def _glossary_chunk_key(job: dict, samples: list[str]) -> str:
     payload = {
-        "policy": "glossary-compact-v2",
+        "policy": "glossary-candidate-v3",
         "model": get_settings().gemini_model,
         "source_lang": job["source_lang"],
         "target_lang": job["target_lang"],
         "samples": samples,
+    }
+    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _glossary_refinement_key(job: dict, candidates: list[dict]) -> str:
+    payload = {
+        "policy": "glossary-context-refinement-v1",
+        "model": get_settings().gemini_model,
+        "source_lang": job["source_lang"],
+        "target_lang": job["target_lang"],
+        "candidates": candidates,
     }
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
@@ -221,6 +234,7 @@ def _process_glossary_job(job: dict, service: GeminiService | None = None) -> No
 
     outputs: list = []
     errors: list[str] = []
+    quota_blocked = False
     for index, samples in enumerate(chunks, start=1):
         cache_key = _glossary_chunk_key(job, samples)
         with transaction(immediate=True) as connection:
@@ -292,6 +306,7 @@ def _process_glossary_job(job: dict, service: GeminiService | None = None) -> No
             )
         except GeminiDailyQuotaError as exc:
             errors.append(str(exc))
+            quota_blocked = True
             _record_attempt(
                 job["id"],
                 kind="glossary",
@@ -331,8 +346,122 @@ def _process_glossary_job(job: dict, service: GeminiService | None = None) -> No
             )
         return
 
-    now = utc_now()
     suggestions, merged_style_rules = _merge_glossary_outputs(outputs)
+    context_candidates = build_candidate_contexts(job["id"], suggestions)
+    refinement_chunks = (
+        [] if quota_blocked else chunk_candidate_contexts(context_candidates)
+    )
+    extraction_count = len(chunks)
+    if refinement_chunks:
+        with transaction(immediate=True) as connection:
+            connection.execute(
+                """
+                UPDATE jobs SET glossary_chunks_total = ?, updated_at = ?
+                WHERE id = ? AND status = 'generating_glossary'
+                """,
+                (extraction_count + len(refinement_chunks), utc_now(), job["id"]),
+            )
+
+    refined_outputs: list = []
+    for refine_index, candidates in enumerate(refinement_chunks, start=1):
+        cache_key = _glossary_refinement_key(job, candidates)
+        cached = None
+        with transaction(immediate=True) as connection:
+            cached = connection.execute(
+                "SELECT result_json FROM glossary_chunk_cache WHERE cache_key = ?",
+                (cache_key,),
+            ).fetchone()
+            if cached:
+                from .gemini_service import GlossaryOutput
+
+                refined_outputs.append(
+                    GlossaryOutput.model_validate_json(cached["result_json"])
+                )
+                connection.execute(
+                    """
+                    UPDATE glossary_chunk_cache
+                    SET hit_count = hit_count + 1, last_used_at = ?
+                    WHERE cache_key = ?
+                    """,
+                    (utc_now(), cache_key),
+                )
+        if not cached:
+            try:
+                result = service.refine_glossary(
+                    candidates,
+                    job["source_lang"],
+                    job["target_lang"],
+                )
+                refined_outputs.append(result.value)
+                cache_now = utc_now()
+                with transaction(immediate=True) as connection:
+                    connection.execute(
+                        """
+                        INSERT INTO glossary_chunk_cache(
+                            cache_key, result_json, input_tokens, output_tokens,
+                            created_at, last_used_at, hit_count
+                        ) VALUES (?, ?, ?, ?, ?, ?, 0)
+                        ON CONFLICT(cache_key) DO UPDATE SET
+                            result_json = excluded.result_json,
+                            input_tokens = excluded.input_tokens,
+                            output_tokens = excluded.output_tokens,
+                            last_used_at = excluded.last_used_at
+                        """,
+                        (
+                            cache_key,
+                            result.value.model_dump_json(),
+                            result.input_tokens,
+                            result.output_tokens,
+                            cache_now,
+                            cache_now,
+                        ),
+                    )
+                _record_attempt(
+                    job["id"],
+                    kind="glossary_refine",
+                    row_ids=[],
+                    status="done",
+                    input_tokens=result.input_tokens,
+                    output_tokens=result.output_tokens,
+                    calls=result.attempts,
+                    thinking_tokens=result.thinking_tokens,
+                    cached_tokens=result.cached_tokens,
+                    finish_reason=result.finish_reason,
+                )
+            except GeminiDailyQuotaError as exc:
+                errors.append(f"ตรวจ Glossary ด้วยบริบทไม่สำเร็จ: {exc}")
+                _record_attempt(
+                    job["id"],
+                    kind="glossary_refine",
+                    row_ids=[],
+                    status="failed",
+                    error=str(exc),
+                    calls=exc.attempts,
+                )
+                break
+            except Exception as exc:
+                errors.append(f"ตรวจ Glossary ด้วยบริบทไม่สำเร็จ: {exc}")
+                _record_attempt(
+                    job["id"],
+                    kind="glossary_refine",
+                    row_ids=[],
+                    status="failed",
+                    error=str(exc),
+                    calls=getattr(exc, "attempts", 1),
+                )
+        with transaction(immediate=True) as connection:
+            connection.execute(
+                """
+                UPDATE jobs SET glossary_chunks_completed = ?, updated_at = ?
+                WHERE id = ? AND status = 'generating_glossary'
+                """,
+                (extraction_count + refine_index, utc_now(), job["id"]),
+            )
+
+    if refinement_chunks and len(refined_outputs) == len(refinement_chunks):
+        suggestions, _ignored_styles = _merge_glossary_outputs(refined_outputs)
+
+    now = utc_now()
 
     with transaction(immediate=True) as connection:
         current = get_job(job["id"], connection)
@@ -390,7 +519,10 @@ def _process_glossary_job(job: dict, service: GeminiService | None = None) -> No
                 revision,
                 style_revision,
                 (
-                    f"สร้าง Glossary ได้บางส่วน: {len(errors)} จาก {len(chunks)} ชุดล้มเหลว"
+                    (
+                        f"สร้าง Glossary ได้บางส่วน: {len(errors)} ขั้นตอนล้มเหลว — "
+                        + "; ".join(errors[:2])
+                    )[:1000]
                     if errors
                     else None
                 ),

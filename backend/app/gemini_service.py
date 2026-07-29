@@ -4,6 +4,7 @@ import json
 import random
 import re
 import time
+import unicodedata
 from dataclasses import dataclass
 from typing import Callable, TypeVar
 
@@ -180,6 +181,7 @@ class GeminiService:
         schema: type[T],
         max_attempts: int = 2,
         max_output_tokens: int | None = None,
+        thinking_level: str = "minimal",
     ) -> AiResult:
         last_error: Exception | None = None
         attempts_made = 0
@@ -195,7 +197,7 @@ class GeminiService:
                     config_values["max_output_tokens"] = max_output_tokens
                 try:
                     config_values["thinking_config"] = types.ThinkingConfig(
-                        thinking_level="minimal"
+                        thinking_level=thinking_level
                     )
                 except (AttributeError, TypeError):
                     # Older SDKs do not expose thinking_level; Flash-Lite defaults to minimal.
@@ -255,7 +257,7 @@ class GeminiService:
     ) -> AiResult:
         sample_text = "\n".join(f"- {sample}" for sample in samples)
         prompt = f"""
-คุณเป็นนักแปลเกมมืออาชีพ กำลังสกัด glossary จากข้อความเกมส่วนหนึ่งเพื่อแปลจาก
+คุณเป็นนักแปลเกมมืออาชีพ กำลังสกัด candidate สำหรับ glossary จากข้อความเกมส่วนหนึ่งเพื่อแปลจาก
 {source_lang} เป็น {target_lang}
 
 วิเคราะห์ข้อความทั้งหมดด้านล่าง แล้วคืนรายการต่อไปนี้ให้ครบที่สุด:
@@ -263,7 +265,9 @@ class GeminiService:
 - ชื่อสถานที่ ร้านค้า เทศกาล ไอเทม สกิล ระบบ และคำเฉพาะของเกม
 - คำหรือวลีที่ต้องแปลให้สม่ำเสมอ
 
+นี่เป็นเพียงรอบสกัด candidate ยังมีรอบตรวจด้วยบริบทจากทั้งไฟล์ภายหลัง
 อย่าใส่คำทั่วไปที่ไม่ใช่ชื่อหรือศัพท์เฉพาะ และห้ามตัดชื่อทิ้งเพียงเพราะพบครั้งเดียว
+ตัวอักษรขึ้นต้นด้วยตัวใหญ่เพียงอย่างเดียวไม่ใช่หลักฐานว่าเป็นชื่อเฉพาะ
 
 ข้อความส่วนนี้:
 {sample_text}
@@ -282,6 +286,80 @@ class GeminiService:
                     for item in value.g
                 ]
             ),
+            input_tokens=compact.input_tokens,
+            output_tokens=compact.output_tokens,
+            attempts=compact.attempts,
+            thinking_tokens=compact.thinking_tokens,
+            cached_tokens=compact.cached_tokens,
+            finish_reason=compact.finish_reason,
+        )
+
+    def refine_glossary(
+        self,
+        candidates: list[dict],
+        source_lang: str,
+        target_lang: str,
+    ) -> AiResult:
+        payload = json.dumps(
+            {"c": candidates},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        prompt = f"""
+คุณเป็นนักแปลเกมและผู้เชี่ยวชาญงานศัพท์ภาษาไทย
+ตรวจและปรับ candidate glossary จาก {source_lang} เป็น {target_lang}
+
+แต่ละ c มี:
+s=คำต้นฉบับ, t=คำแปลที่เสนอ, n=หมายเหตุ, count=จำนวนครั้งที่พบ,
+x=ตัวอย่างการใช้จากหลายตำแหน่งในไฟล์
+
+หลักการ:
+1. พิจารณาแนวคิดจากตัวอย่าง x ทั้งหมด ไม่ตัดสินจากรูปคำหรืออักษรตัวใหญ่เพียงอย่างเดียว
+2. แปลตามความหมายเป็นภาษาไทยธรรมชาติเป็นค่าเริ่มต้น
+3. ทับศัพท์เฉพาะชื่อบุคคล สถานที่ แบรนด์ ชื่อสมมติ หรือคำเฉพาะที่ไม่มีคำไทยธรรมชาติ
+4. คำทั่วไป อาหาร วัตถุดิบ สัตว์ สิ่งของ กริยา และคุณศัพท์ ใช้คำไทยที่คนไทยใช้จริง
+5. คำทั่วไปอาจคงอยู่ใน glossary ได้เมื่อช่วยความสม่ำเสมอ แต่ห้ามทับศัพท์โดยไม่มีเหตุผล
+6. ถ้าไม่มีข้อมูลผู้พูด ห้ามเดาเพศ อายุ หรือความสัมพันธ์
+7. คง s ตาม candidate เดิม ห้ามสร้างคำที่ไม่มีใน c และคืนแต่ละ s ไม่เกินหนึ่งครั้ง
+8. n ให้สั้นและบอกประเภทหรือบริบทเฉพาะเมื่อมีประโยชน์
+
+ตัวอย่างการตัดสิน:
+- Milk ในบริบทดื่มนม วัวให้นม หรือทำนมเป็นวัตถุดิบ -> นม ไม่ใช่ มิลค์
+- Hot milk -> นมอุ่น
+- Milker ซึ่งเป็นอุปกรณ์ -> เครื่องรีดนม
+- Karen ซึ่งเป็นชื่อตัวละคร -> คาเรน
+
+คืน g=[{{"s":คำต้นฉบับ,"t":คำแปลที่แก้แล้ว,"n":หมายเหตุ}}]
+ข้อมูล:{payload}
+""".strip()
+        compact = self._generate(
+            prompt,
+            CompactGlossaryOutput,
+            thinking_level="low",
+        )
+        value = compact.value
+        assert isinstance(value, CompactGlossaryOutput)
+        allowed = {
+            unicodedata.normalize("NFKC", str(item["s"])).casefold(): item
+            for item in candidates
+        }
+        glossary: list[GlossarySuggestion] = []
+        seen: set[str] = set()
+        for item in value.g:
+            key = unicodedata.normalize("NFKC", item.s).casefold()
+            candidate = allowed.get(key)
+            if candidate is None or key in seen or not item.t.strip():
+                continue
+            seen.add(key)
+            glossary.append(
+                GlossarySuggestion(
+                    source_term=str(candidate["s"]),
+                    target_term=item.t.strip(),
+                    note=item.n.strip(),
+                )
+            )
+        return AiResult(
+            value=GlossaryOutput(glossary=glossary),
             input_tokens=compact.input_tokens,
             output_tokens=compact.output_tokens,
             attempts=compact.attempts,

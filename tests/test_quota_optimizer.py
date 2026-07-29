@@ -4,6 +4,8 @@ from fastapi.testclient import TestClient
 
 from backend.app.batching import take_adaptive_batch
 from backend.app.gemini_service import (
+    CompactGlossaryOutput,
+    CompactGlossarySuggestion,
     CompactTranslationItem,
     CompactTranslationOutput,
     GeminiService,
@@ -70,6 +72,53 @@ def test_gemini_service_uses_compact_ids_and_maps_segments_back():
     assert translated.segments[0].translated_text == "สวัสดี"
     assert "very-long-row-uuid" not in Client.models.contents
     assert result.cached_tokens == 5
+
+
+def test_glossary_refinement_sends_corpus_context_and_rejects_new_terms():
+    class Response:
+        parsed = CompactGlossaryOutput(
+            g=[
+                CompactGlossarySuggestion(s="milk", t="นม", n="วัตถุดิบ"),
+                CompactGlossarySuggestion(s="Invented", t="คำที่แต่งเพิ่ม", n=""),
+            ]
+        )
+        text = ""
+        usage_metadata = None
+        candidates = []
+
+    class Models:
+        contents = ""
+        config = None
+
+        def generate_content(self, **kwargs):
+            self.contents = kwargs["contents"]
+            self.config = kwargs["config"]
+            return Response()
+
+    class Client:
+        models = Models()
+
+    service = GeminiService(api_key="context-key", client=Client())
+    result = service.refine_glossary(
+        [
+            {
+                "s": "Milk",
+                "t": "มิลค์",
+                "n": "ไอเทม",
+                "count": 4,
+                "x": ["Cows produce milk", "Drink a cup of milk"],
+            }
+        ],
+        "English",
+        "Thai",
+    )
+
+    assert "Cows produce milk" in Client.models.contents
+    assert "อักษรตัวใหญ่" in Client.models.contents
+    assert Client.models.config.thinking_config.thinking_level.value == "LOW"
+    assert len(result.value.glossary) == 1
+    assert result.value.glossary[0].source_term == "Milk"
+    assert result.value.glossary[0].target_term == "นม"
 
 
 def test_duplicate_rows_are_translated_once_and_fanned_out():
