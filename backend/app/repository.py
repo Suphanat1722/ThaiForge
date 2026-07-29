@@ -11,6 +11,7 @@ from typing import Iterable
 from .config import get_settings
 from .csv_service import iter_csv_rows
 from .db import connect, transaction, utc_now
+from .glossary_rules import clean_glossary_rules
 from .tokens import extract_protected_tokens
 
 
@@ -383,13 +384,74 @@ def list_style_rules(job_id: str) -> list[dict]:
         ]
 
 
+def list_glossary_rules(job_id: str) -> list[dict]:
+    with connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT * FROM glossary_rules
+            WHERE job_id = ? AND is_active = 1
+            ORDER BY created_at, id
+            """,
+            (job_id,),
+        ).fetchall()
+        if rows:
+            return [dict(row) for row in rows]
+        job = get_job(job_id, connection)
+        if not job:
+            raise KeyError(job_id)
+        return []
+
+
+def glossary_rule_settings(job_id: str) -> dict:
+    job = get_job(job_id)
+    if not job:
+        raise KeyError(job_id)
+    return {
+        "rules": [rule["rule_text"] for rule in list_glossary_rules(job_id)],
+        "revision": job.get("glossary_rules_revision", 0),
+        "applied_revision": job.get("glossary_rules_applied_revision", 0),
+        "needs_regeneration": bool(
+            job["glossary_revision"]
+            and job.get("glossary_rules_revision", 0)
+            != job.get("glossary_rules_applied_revision", 0)
+        ),
+    }
+
+
+def replace_glossary_rules(job_id: str, rules: list[str]) -> dict:
+    clean_rules = clean_glossary_rules(rules)
+    with transaction(immediate=True) as connection:
+        job = get_job(job_id, connection)
+        if not job:
+            raise KeyError(job_id)
+        revision = job.get("glossary_rules_revision", 0) + 1
+        now = utc_now()
+        connection.execute("DELETE FROM glossary_rules WHERE job_id = ?", (job_id,))
+        connection.executemany(
+            """
+            INSERT INTO glossary_rules(
+                id, job_id, rule_text, is_active, revision, created_at, updated_at
+            ) VALUES (?, ?, ?, 1, ?, ?, ?)
+            """,
+            [(new_id(), job_id, rule, revision, now, now) for rule in clean_rules],
+        )
+        connection.execute(
+            """
+            UPDATE jobs SET glossary_rules_revision = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (revision, now, job_id),
+        )
+    return glossary_rule_settings(job_id)
+
+
 def _record_glossary_revision(connection: sqlite3.Connection, entry: dict, job_revision: int) -> None:
     connection.execute(
         """
         INSERT INTO glossary_entry_revisions(
             id, job_id, entry_id, job_revision, source_term, target_term,
-            rule_note, is_active, is_deleted, changed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            rule_note, is_active, is_deleted, changed_at, translation_mode
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             new_id(),
@@ -402,6 +464,7 @@ def _record_glossary_revision(connection: sqlite3.Connection, entry: dict, job_r
             int(entry.get("is_active", 1)),
             int(entry.get("is_deleted", 0)),
             utc_now(),
+            entry.get("translation_mode", "mixed"),
         ),
     )
 
@@ -412,6 +475,7 @@ def create_glossary_entry(
     target_term: str,
     rule_note: str = "",
     created_by: str = "user",
+    translation_mode: str = "mixed",
 ) -> dict:
     now = utc_now()
     entry_id = new_id()
@@ -424,8 +488,9 @@ def create_glossary_entry(
             """
             INSERT INTO glossary_entries(
                 id, job_id, source_term, target_term, rule_note, is_active,
-                is_deleted, created_by, revision, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?)
+                is_deleted, created_by, revision, created_at, updated_at,
+                translation_mode
+            ) VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?)
             """,
             (
                 entry_id,
@@ -437,6 +502,7 @@ def create_glossary_entry(
                 revision,
                 now,
                 now,
+                translation_mode,
             ),
         )
         entry = dict(
@@ -453,7 +519,13 @@ def create_glossary_entry(
 
 
 def update_glossary_entry(job_id: str, entry_id: str, updates: dict) -> dict:
-    allowed = {"source_term", "target_term", "rule_note", "is_active"}
+    allowed = {
+        "source_term",
+        "target_term",
+        "rule_note",
+        "is_active",
+        "translation_mode",
+    }
     changes = {key: value for key, value in updates.items() if key in allowed}
     if not changes:
         raise ValueError("ไม่มีข้อมูลที่ต้องแก้ไข")
@@ -473,7 +545,7 @@ def update_glossary_entry(job_id: str, entry_id: str, updates: dict) -> dict:
         connection.execute(
             """
             UPDATE glossary_entries SET source_term = ?, target_term = ?, rule_note = ?,
-                is_active = ?, revision = ?, updated_at = ?
+                is_active = ?, revision = ?, updated_at = ?, translation_mode = ?
             WHERE id = ?
             """,
             (
@@ -483,6 +555,7 @@ def update_glossary_entry(job_id: str, entry_id: str, updates: dict) -> dict:
                 entry["is_active"],
                 revision,
                 now,
+                entry["translation_mode"],
                 entry_id,
             ),
         )

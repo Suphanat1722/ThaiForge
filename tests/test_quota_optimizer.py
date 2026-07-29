@@ -78,8 +78,12 @@ def test_glossary_refinement_sends_corpus_context_and_rejects_new_terms():
     class Response:
         parsed = CompactGlossaryOutput(
             g=[
-                CompactGlossarySuggestion(s="milk", t="นม", n="วัตถุดิบ"),
-                CompactGlossarySuggestion(s="Invented", t="คำที่แต่งเพิ่ม", n=""),
+                CompactGlossarySuggestion(
+                    s="milk", t="นม", n="วัตถุดิบ", m="translate"
+                ),
+                CompactGlossarySuggestion(
+                    s="Invented", t="คำที่แต่งเพิ่ม", n="", m="translate"
+                ),
             ]
         )
         text = ""
@@ -105,20 +109,58 @@ def test_glossary_refinement_sends_corpus_context_and_rejects_new_terms():
                 "s": "Milk",
                 "t": "มิลค์",
                 "n": "ไอเทม",
+                "m": "transliterate",
                 "count": 4,
                 "x": ["Cows produce milk", "Drink a cup of milk"],
             }
         ],
         "English",
         "Thai",
+        ["ชื่อปุ่มควบคุมให้คงอักษรละติน"],
     )
 
     assert "Cows produce milk" in Client.models.contents
-    assert "อักษรตัวใหญ่" in Client.models.contents
+    assert "ชื่อปุ่มควบคุมให้คงอักษรละติน" in Client.models.contents
+    assert "Select Button" in Client.models.contents
+    assert "Turbojolt XL" in Client.models.contents
+    assert "เทอร์โบจอลต์ XL" in Client.models.contents
+    assert '"m":"mixed"' in Client.models.contents
+    assert "ตัวพิมพ์ใหญ่" in Client.models.contents
     assert Client.models.config.thinking_config.thinking_level.value == "LOW"
     assert len(result.value.glossary) == 1
     assert result.value.glossary[0].source_term == "Milk"
     assert result.value.glossary[0].target_term == "นม"
+    assert result.value.glossary[0].mode == "translate"
+
+
+def test_glossary_keep_mode_forces_exact_source_text():
+    class Response:
+        parsed = CompactGlossaryOutput(
+            g=[
+                CompactGlossarySuggestion(
+                    s="XL", t="เอ็กซ์แอล", n="ขนาด", m="keep"
+                )
+            ]
+        )
+        text = ""
+        usage_metadata = None
+        candidates = []
+
+    class Models:
+        def generate_content(self, **_kwargs):
+            return Response()
+
+    class Client:
+        models = Models()
+
+    service = GeminiService(api_key="keep-key", client=Client())
+    result = service.refine_glossary(
+        [{"s": "XL", "t": "เอ็กซ์แอล", "n": "", "m": "transliterate", "count": 1, "x": ["Turbojolt XL"]}],
+        "English",
+        "Thai",
+    )
+    assert result.value.glossary[0].target_term == "XL"
+    assert result.value.glossary[0].mode == "keep"
 
 
 def test_duplicate_rows_are_translated_once_and_fanned_out():

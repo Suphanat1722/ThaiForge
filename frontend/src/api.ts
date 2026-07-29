@@ -52,6 +52,8 @@ export type Job = {
   completed_rows: number;
   glossary_revision: number;
   style_revision: number;
+  glossary_rules_revision: number;
+  glossary_rules_applied_revision: number;
   last_error: string | null;
   ai_calls: number;
   input_tokens: number;
@@ -67,6 +69,7 @@ export type Job = {
   updated_at: string;
   counts?: Counts;
   style_rules?: StyleRule[];
+  glossary_rule_settings?: GlossaryRuleSettings;
 };
 
 export type GlossaryEntry = {
@@ -77,12 +80,20 @@ export type GlossaryEntry = {
   is_active: number;
   created_by: "ai" | "user";
   revision: number;
+  translation_mode: "translate" | "transliterate" | "keep" | "mixed";
 };
 
 export type StyleRule = {
   id: string;
   rule_text: string;
   revision: number;
+};
+
+export type GlossaryRuleSettings = {
+  rules: string[];
+  revision: number;
+  applied_revision: number;
+  needs_regeneration: boolean;
 };
 
 export type TranslationRow = {

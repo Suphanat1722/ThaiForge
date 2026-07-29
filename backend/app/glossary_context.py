@@ -33,18 +33,19 @@ def _context_excerpt(text: str, term: str, max_chars: int = MAX_CONTEXT_CHARS) -
 
 def build_candidate_contexts(
     job_id: str,
-    suggestions: list[tuple[str, str, str]],
+    suggestions: list[tuple[str, str, str, str]],
 ) -> list[dict]:
     candidates = [
         {
             "s": source,
             "t": target,
             "n": note,
+            "m": mode,
             "count": 0,
             "x": [],
             "_seen": set(),
         }
-        for source, target, note in suggestions
+        for source, target, note, mode in suggestions
     ]
     if not candidates:
         return []
@@ -77,6 +78,7 @@ def build_candidate_contexts(
             "s": candidate["s"],
             "t": candidate["t"],
             "n": candidate["n"],
+            "m": candidate["m"],
             "count": candidate["count"],
             "x": candidate["x"],
         }
@@ -95,6 +97,7 @@ def chunk_candidate_contexts(candidates: list[dict]) -> list[list[dict]]:
                 candidate["s"],
                 candidate["t"],
                 candidate["n"],
+                candidate["m"],
                 candidate["count"],
                 *candidate["x"],
             )

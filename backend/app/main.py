@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .api_schemas import (
     GlossaryCreate,
+    GlossaryRulesUpdate,
     GlossaryUpdate,
     JobConfiguration,
     RetryFailedRequest,
@@ -36,6 +37,7 @@ from .repository import (
     create_uploaded_job,
     delete_glossary_entry,
     get_job,
+    glossary_rule_settings,
     job_counts,
     list_jobs,
     list_style_rules,
@@ -43,6 +45,7 @@ from .repository import (
     paginate_glossary,
     paginate_rows,
     quota_efficiency,
+    replace_glossary_rules,
     replace_style_rules,
     update_glossary_entry,
 )
@@ -110,6 +113,7 @@ def job_detail(job_id: str) -> dict:
     job = _require_job(job_id)
     job["counts"] = job_counts(job_id)
     job["style_rules"] = list_style_rules(job_id)
+    job["glossary_rule_settings"] = glossary_rule_settings(job_id)
     job["quota_usage"] = quota_usage()
     job["quota_efficiency"] = quota_efficiency(job_id)
     job["failure_summary"] = _failure_summary(job_id)
@@ -117,6 +121,32 @@ def job_detail(job_id: str) -> dict:
         job,
         include_preview=job["status"] in {"uploaded", "configured"},
     )
+
+
+def _assert_glossary_rules_editable(job_id: str) -> dict:
+    job = _require_job(job_id)
+    if job["status"] not in {"configured", "awaiting_review"}:
+        raise _conflict("แก้กฎสร้าง Glossary ได้ก่อนเริ่มแปลเท่านั้น")
+    with connect() as connection:
+        translated_count = connection.execute(
+            """
+            SELECT COUNT(*) AS count FROM translation_rows
+            WHERE job_id = ? AND translated_text IS NOT NULL
+            """,
+            (job_id,),
+        ).fetchone()["count"]
+    if translated_count:
+        raise _conflict("งานนี้เริ่มแปลแล้ว จึงแก้กฎสร้าง Glossary ไม่ได้")
+    return job
+
+
+@app.put("/api/jobs/{job_id}/glossary-rules")
+def glossary_rules_update(job_id: str, payload: GlossaryRulesUpdate) -> dict:
+    _assert_glossary_rules_editable(job_id)
+    try:
+        return replace_glossary_rules(job_id, payload.rules)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _failure_summary(job_id: str) -> dict[str, int]:
@@ -271,6 +301,7 @@ def glossary_list(
     return {
         "entries": result["items"],
         "style_rules": list_style_rules(job_id),
+        "glossary_rule_settings": glossary_rule_settings(job_id),
         "total": result["total"],
         "page": result["page"],
         "page_size": result["page_size"],
@@ -283,7 +314,11 @@ def glossary_create(job_id: str, payload: GlossaryCreate) -> dict:
     if job["status"] in {"uploaded", "generating_glossary"}:
         raise _conflict("ยังแก้ Glossary ในสถานะนี้ไม่ได้")
     return create_glossary_entry(
-        job_id, payload.source_term, payload.target_term, payload.rule_note
+        job_id,
+        payload.source_term,
+        payload.target_term,
+        payload.rule_note,
+        translation_mode=payload.translation_mode,
     )
 
 

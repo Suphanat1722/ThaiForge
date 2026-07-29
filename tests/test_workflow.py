@@ -18,7 +18,9 @@ from backend.app.worker import run_once
 class FakeGemini:
     calls = 0
 
-    def generate_glossary(self, samples, source_lang, target_lang):
+    def generate_glossary(
+        self, samples, source_lang, target_lang, glossary_rules=None
+    ):
         self.calls += 1
         return AiResult(
             value=GlossaryOutput(
@@ -57,7 +59,9 @@ class FakeGemini:
             output_tokens=20,
         )
 
-    def refine_glossary(self, candidates, source_lang, target_lang):
+    def refine_glossary(
+        self, candidates, source_lang, target_lang, glossary_rules=None
+    ):
         self.calls += 1
         return AiResult(
             value=GlossaryOutput(

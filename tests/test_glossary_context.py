@@ -16,7 +16,9 @@ class ContextRefiningGemini:
     refinement_calls = 0
     refinement_candidates: list[dict] = []
 
-    def generate_glossary(self, samples, source_lang, target_lang):
+    def generate_glossary(
+        self, samples, source_lang, target_lang, glossary_rules=None
+    ):
         self.extraction_calls += 1
         return AiResult(
             value=GlossaryOutput(
@@ -35,7 +37,9 @@ class ContextRefiningGemini:
             )
         )
 
-    def refine_glossary(self, candidates, source_lang, target_lang):
+    def refine_glossary(
+        self, candidates, source_lang, target_lang, glossary_rules=None
+    ):
         self.refinement_calls += 1
         self.refinement_candidates.extend(candidates)
         refined = []
@@ -52,7 +56,9 @@ class ContextRefiningGemini:
 
 
 class BrokenRefinementGemini(ContextRefiningGemini):
-    def refine_glossary(self, candidates, source_lang, target_lang):
+    def refine_glossary(
+        self, candidates, source_lang, target_lang, glossary_rules=None
+    ):
         self.refinement_calls += 1
         raise RuntimeError("refinement unavailable")
 
@@ -89,7 +95,7 @@ def test_context_builder_collects_occurrences_from_the_whole_corpus():
         job_id = create_context_job(client)
         candidates = build_candidate_contexts(
             job_id,
-            [("Milk", "มิลค์", "ไอเทม")],
+            [("Milk", "มิลค์", "ไอเทม", "transliterate")],
         )
 
     assert candidates[0]["count"] == 4

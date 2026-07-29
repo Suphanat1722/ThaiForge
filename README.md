@@ -38,6 +38,8 @@ The system automatically creates batches based on token usage and deduplicates r
 
 Glossary generation uses two stages. Gemini first extracts candidates from each batch. The system then gathers occurrence counts and up to four distinct usage examples per candidate from the entire source file, and sends compact context batches back to Gemini for refinement. This favors natural Thai meanings for ordinary words while reserving transliteration for proper names, brands, and fictional terms. Both extraction and refinement results are cached when the file, languages, and input data match.
 
+Glossary decisions use four explicit modes: translate to Thai, transliterate, keep the source text, or mix modes by phrase component. Optional project-specific overrides are available for conventions unique to one game; the universal decision framework remains fixed. Changing project overrides invalidates only the relevant Glossary cache and never deletes completed translations.
+
 By default, each request supports up to 500 unique messages within an input budget of 120,000 tokens and an output budget of 45,000 tokens.
 
 Cached translations can be reused across jobs when the languages, Glossary, and Style settings match exactly.

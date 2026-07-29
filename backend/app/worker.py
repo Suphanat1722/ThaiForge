@@ -26,6 +26,7 @@ from .logging_config import configure_logging
 from .repository import (
     get_job,
     list_glossary,
+    list_glossary_rules,
     list_style_rules,
     new_id,
     recover_stale_leases,
@@ -152,31 +153,43 @@ def _source_chunks(job_id: str) -> list[list[str]]:
     return chunks
 
 
-def _glossary_chunk_key(job: dict, samples: list[str]) -> str:
+def _glossary_chunk_key(
+    job: dict,
+    samples: list[str],
+    glossary_rules: list[str] | None = None,
+) -> str:
     payload = {
-        "policy": "glossary-candidate-v3",
+        "policy": "glossary-candidate-v5-four-modes",
         "model": get_settings().gemini_model,
         "source_lang": job["source_lang"],
         "target_lang": job["target_lang"],
+        "glossary_rules": glossary_rules or [],
         "samples": samples,
     }
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
 
 
-def _glossary_refinement_key(job: dict, candidates: list[dict]) -> str:
+def _glossary_refinement_key(
+    job: dict,
+    candidates: list[dict],
+    glossary_rules: list[str] | None = None,
+) -> str:
     payload = {
-        "policy": "glossary-context-refinement-v1",
+        "policy": "glossary-context-refinement-v3-four-modes",
         "model": get_settings().gemini_model,
         "source_lang": job["source_lang"],
         "target_lang": job["target_lang"],
+        "glossary_rules": glossary_rules or [],
         "candidates": candidates,
     }
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
 
 
-def _merge_glossary_outputs(outputs: list) -> tuple[list[tuple[str, str, str]], list[str]]:
+def _merge_glossary_outputs(
+    outputs: list,
+) -> tuple[list[tuple[str, str, str, str]], list[str]]:
     grouped: dict[str, dict] = {}
     for output in outputs:
         for item in output.glossary:
@@ -192,24 +205,30 @@ def _merge_glossary_outputs(outputs: list) -> tuple[list[tuple[str, str, str]], 
                     "sources": Counter(),
                     "targets": Counter(),
                     "notes": Counter(),
+                    "modes": Counter(),
                 },
             )
             group["sources"][source] += 1
             group["targets"][target] += 1
+            group["modes"][item.mode] += 1
             if note:
                 group["notes"][note] += 1
-    entries: list[tuple[str, str, str]] = []
+    entries: list[tuple[str, str, str, str]] = []
     for group in grouped.values():
         source = group["sources"].most_common(1)[0][0]
         target = group["targets"].most_common(1)[0][0]
         note = group["notes"].most_common(1)[0][0] if group["notes"] else ""
-        entries.append((source, target, note))
+        mode = group["modes"].most_common(1)[0][0]
+        entries.append((source, target, note, mode))
     entries.sort(key=lambda item: normalize_term(item[0]))
     return entries, list(DEFAULT_STYLE_RULES)
 
 
 def _process_glossary_job(job: dict, service: GeminiService | None = None) -> None:
     service = service or GeminiService()
+    glossary_rules = [
+        rule["rule_text"] for rule in list_glossary_rules(job["id"])
+    ]
     chunks = _source_chunks(job["id"])
     if not chunks:
         with transaction(immediate=True) as connection:
@@ -236,7 +255,7 @@ def _process_glossary_job(job: dict, service: GeminiService | None = None) -> No
     errors: list[str] = []
     quota_blocked = False
     for index, samples in enumerate(chunks, start=1):
-        cache_key = _glossary_chunk_key(job, samples)
+        cache_key = _glossary_chunk_key(job, samples, glossary_rules)
         with transaction(immediate=True) as connection:
             cached = connection.execute(
                 "SELECT result_json FROM glossary_chunk_cache WHERE cache_key = ?",
@@ -266,7 +285,10 @@ def _process_glossary_job(job: dict, service: GeminiService | None = None) -> No
             continue
         try:
             result = service.generate_glossary(
-                samples, job["source_lang"], job["target_lang"]
+                samples,
+                job["source_lang"],
+                job["target_lang"],
+                glossary_rules,
             )
             outputs.append(result.value)
             now = utc_now()
@@ -364,7 +386,7 @@ def _process_glossary_job(job: dict, service: GeminiService | None = None) -> No
 
     refined_outputs: list = []
     for refine_index, candidates in enumerate(refinement_chunks, start=1):
-        cache_key = _glossary_refinement_key(job, candidates)
+        cache_key = _glossary_refinement_key(job, candidates, glossary_rules)
         cached = None
         with transaction(immediate=True) as connection:
             cached = connection.execute(
@@ -391,6 +413,7 @@ def _process_glossary_job(job: dict, service: GeminiService | None = None) -> No
                     candidates,
                     job["source_lang"],
                     job["target_lang"],
+                    glossary_rules,
                 )
                 refined_outputs.append(result.value)
                 cache_now = utc_now()
@@ -472,25 +495,46 @@ def _process_glossary_job(job: dict, service: GeminiService | None = None) -> No
         connection.execute(
             "DELETE FROM glossary_entry_revisions WHERE job_id = ?", (job["id"],)
         )
-        for source, target, note in suggestions:
+        for source, target, note, mode in suggestions:
             entry_id = new_id()
             connection.execute(
                 """
                 INSERT INTO glossary_entries(
                     id, job_id, source_term, target_term, rule_note, is_active,
-                    is_deleted, created_by, revision, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, 1, 0, 'ai', ?, ?, ?)
+                    is_deleted, created_by, revision, created_at, updated_at,
+                    translation_mode
+                ) VALUES (?, ?, ?, ?, ?, 1, 0, 'ai', ?, ?, ?, ?)
                 """,
-                (entry_id, job["id"], source, target, note, revision, now, now),
+                (
+                    entry_id,
+                    job["id"],
+                    source,
+                    target,
+                    note,
+                    revision,
+                    now,
+                    now,
+                    mode,
+                ),
             )
             connection.execute(
                 """
                 INSERT INTO glossary_entry_revisions(
                     id, job_id, entry_id, job_revision, source_term, target_term,
-                    rule_note, is_active, is_deleted, changed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, ?)
+                    rule_note, is_active, is_deleted, changed_at, translation_mode
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
                 """,
-                (new_id(), job["id"], entry_id, revision, source, target, note, now),
+                (
+                    new_id(),
+                    job["id"],
+                    entry_id,
+                    revision,
+                    source,
+                    target,
+                    note,
+                    now,
+                    mode,
+                ),
             )
 
         existing_style_count = connection.execute(
@@ -512,11 +556,13 @@ def _process_glossary_job(job: dict, service: GeminiService | None = None) -> No
         connection.execute(
             """
             UPDATE jobs SET status = 'awaiting_review', glossary_revision = ?,
-                style_revision = ?, last_error = ?, updated_at = ?
+                glossary_rules_applied_revision = ?, style_revision = ?,
+                last_error = ?, updated_at = ?
             WHERE id = ?
             """,
             (
                 revision,
+                current.get("glossary_rules_revision", 0),
                 style_revision,
                 (
                     (

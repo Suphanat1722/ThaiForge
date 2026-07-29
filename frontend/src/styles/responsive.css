@@ -7,6 +7,8 @@
   .stage-nav { padding-inline: 18px; }
   .glossary-layout { grid-template-columns: 1fr; }
   .style-editor { position: static; }
+  .glossary-setup { grid-template-columns: 1fr; }
+  .rules-sidebar { position: static; }
   .progress-dashboard { grid-template-columns: 1fr 1fr; }
   .progress-panel { grid-column: 1 / -1; }
   .inline-add { grid-template-columns: 1fr 1fr; }
@@ -96,4 +98,3 @@
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   button:active, .primary-button:active, .secondary-button:active { transform: none; }
 }
-

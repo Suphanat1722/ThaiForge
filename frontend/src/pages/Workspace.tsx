@@ -31,6 +31,7 @@ import { toast } from "sonner";
 import {
   api,
   type GlossaryEntry,
+  type GlossaryRuleSettings,
   type Job,
   type Scan,
   type StyleRule,
@@ -270,6 +271,12 @@ function GlossaryRow({
         <td data-label="คำแปลบังคับ">
           {editing ? <input aria-label={`คำแปลของ ${entry.source_term}`} value={target} onChange={(event) => setTarget(event.target.value)} /> : entry.target_term}
         </td>
+        <td data-label="วิธี"><span className="origin-badge">{({
+          translate: "แปลไทย",
+          transliterate: "ทับศัพท์",
+          keep: "คงอังกฤษ",
+          mixed: "ผสม",
+        } as const)[entry.translation_mode] ?? "ผสม"}</span></td>
         <td data-label="หมายเหตุ">
           {editing ? <input aria-label={`หมายเหตุของ ${entry.source_term}`} value={note} onChange={(event) => setNote(event.target.value)} placeholder="บริบทหรือข้อกำหนด" /> : (entry.rule_note || "—")}
         </td>
@@ -303,6 +310,96 @@ function GlossaryRow({
   );
 }
 
+function GlossaryRulesEditor({
+  job,
+  onChanged,
+  onDirtyChange,
+}: {
+  job: Job;
+  onChanged(): Promise<void>;
+  onDirtyChange?(dirty: boolean): void;
+}) {
+  const [rulesText, setRulesText] = useState("");
+  const [savedText, setSavedText] = useState("");
+  const [settings, setSettings] = useState<GlossaryRuleSettings | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const editable = ["configured", "awaiting_review"].includes(job.status);
+  const dirty = rulesText !== savedText;
+  const rules = rulesText.split("\n").map((rule) => rule.trim()).filter(Boolean);
+  const totalChars = rules.reduce((total, rule) => total + rule.length, 0);
+  const invalid = rules.length > 20
+    || rules.some((rule) => rule.length > 300) || totalChars > 4000;
+
+  const load = useCallback(async () => {
+    const detail = await api<Job>(`/api/jobs/${job.id}`);
+    const next = detail.glossary_rule_settings;
+    if (next) {
+      const text = next.rules.join("\n");
+      setSettings(next);
+      setRulesText(text);
+      setSavedText(text);
+    }
+  }, [job.id]);
+
+  useEffect(() => {
+    void load().catch((err: Error) => setError(err.message));
+  }, [load, job.glossary_rules_revision, job.glossary_rules_applied_revision]);
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
+  async function saveRules() {
+    setBusy(true); setError("");
+    try {
+      const next = await put<GlossaryRuleSettings>(`/api/jobs/${job.id}/glossary-rules`, {
+        rules,
+      });
+      setSettings(next);
+      setSavedText(next.rules.join("\n"));
+      setRulesText(next.rules.join("\n"));
+      toast.success("บันทึกกฎสร้าง Glossary แล้ว");
+      await onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "บันทึกกฎไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="panel glossary-rules-editor">
+      <div><span className="step-number">PROJECT OVERRIDES</span><h2>ข้อกำหนดเฉพาะโปรเจกต์</h2></div>
+      <p className="panel-description">ไม่บังคับ — ใช้เฉพาะธรรมเนียมของเกมนี้ ระบบมีหลักแปล/ทับศัพท์/คงอังกฤษ/ผสมให้อยู่แล้ว</p>
+      {error && <ErrorBanner message={error} onClose={() => setError("")} />}
+      <textarea
+        rows={10}
+        value={rulesText}
+        onChange={(event) => setRulesText(event.target.value)}
+        disabled={!editable || busy}
+        aria-label="ข้อกำหนดเฉพาะโปรเจกต์"
+        placeholder={"ตัวอย่าง: ใช้การสะกดชื่อตัวละครตามภาคก่อน\nเว้นว่างได้หากไม่มีข้อกำหนดเฉพาะ"}
+      />
+      <small className={invalid ? "field-error" : "muted"}>
+        {rules.length}/20 กฎ · {totalChars}/4,000 ตัวอักษร
+      </small>
+      {settings?.needs_regeneration && (
+        <div className="dirty-note" role="status">กฎเปลี่ยนหลังสร้าง Glossary ต้องสร้างใหม่จึงจะมีผล</div>
+      )}
+      {dirty && <div className="dirty-note" role="status">มีการแก้ไขที่ยังไม่บันทึก</div>}
+      {editable ? (
+        <div className="rule-actions">
+          <button className="primary-button wide" onClick={() => void saveRules()} disabled={busy || !dirty || invalid}>บันทึกข้อกำหนด</button>
+          <button className="text-button wide" onClick={() => setRulesText("")} disabled={busy || !rulesText}>ล้างข้อความ</button>
+        </div>
+      ) : (
+        <div className="info-note">งานเริ่มแปลแล้ว กฎชุดนี้เปิดให้อ่านอย่างเดียว</div>
+      )}
+    </section>
+  );
+}
+
 function GlossaryPanel({
   job,
   onJobChanged,
@@ -327,6 +424,7 @@ function GlossaryPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [confirmGenerate, setConfirmGenerate] = useState(false);
+  const [glossaryRulesDirty, setGlossaryRulesDirty] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query), 250);
@@ -397,15 +495,19 @@ function GlossaryPanel({
 
   if (job.status === "configured") {
     return (
-      <section className="center-stage panel">
-        <span className="stage-icon"><Sparkles /></span>
-        <span className="step-number">02 · GLOSSARY</span>
-        <h2>สร้างคลังศัพท์ชุดแรกจากทั้งไฟล์</h2>
-        <p>Gemini จะวิเคราะห์เป็น batch และรวมคำซ้ำในเครื่อง คำแปลเดิมยังไม่ถูกแก้ไขในขั้นตอนนี้</p>
-        <button className="primary-button" disabled={busy} onClick={() => void onGenerate()}>
-          <Sparkles /> เริ่มวิเคราะห์คำศัพท์
-        </button>
-      </section>
+      <div className="glossary-setup">
+        <GlossaryRulesEditor job={job} onChanged={onJobChanged} onDirtyChange={setGlossaryRulesDirty} />
+        <section className="center-stage panel">
+          <span className="stage-icon"><Sparkles /></span>
+          <span className="step-number">02 · GLOSSARY</span>
+          <h2>สร้างคลังศัพท์ชุดแรกจากทั้งไฟล์</h2>
+          <p>Gemini จะวิเคราะห์เป็น batch ตามกฎที่บันทึกไว้ คำแปลเดิมยังไม่ถูกแก้ไขในขั้นตอนนี้</p>
+          {glossaryRulesDirty && <div className="dirty-note">กรุณาบันทึกกฎก่อนเริ่มสร้าง Glossary</div>}
+          <button className="primary-button" disabled={busy || glossaryRulesDirty} onClick={() => void onGenerate()}>
+            <Sparkles /> เริ่มวิเคราะห์คำศัพท์
+          </button>
+        </section>
+      </div>
     );
   }
   if (job.status === "generating_glossary") {
@@ -456,7 +558,7 @@ function GlossaryPanel({
         </div>
         <div className="table-scroll glossary-table">
           <table>
-            <thead><tr><th>ต้นฉบับ</th><th>คำแปลบังคับ</th><th>หมายเหตุ</th><th>ที่มา</th><th>จัดการ</th></tr></thead>
+            <thead><tr><th>ต้นฉบับ</th><th>คำแปลบังคับ</th><th>วิธี</th><th>หมายเหตุ</th><th>ที่มา</th><th>จัดการ</th></tr></thead>
             <tbody>
               {entries.map((entry) => <GlossaryRow key={entry.id} jobId={job.id} entry={entry} onChanged={changed} />)}
             </tbody>
@@ -471,22 +573,25 @@ function GlossaryPanel({
         </form>
         <Pagination page={page} pageSize={50} total={total} onPage={setPage} />
       </section>
-      <aside className="panel style-editor">
-        <div><span className="step-number">STYLE RULES</span><h2>กฎสไตล์</h2></div>
-        <p className="panel-description">หนึ่งกฎต่อบรรทัด ส่งเฉพาะกฎชุดสั้นนี้ในแต่ละ batch</p>
-        <textarea rows={12} value={styleText} onChange={(event) => setStyleText(event.target.value)} aria-label="กฎสไตล์" />
-        {styleText !== savedStyle && <div className="dirty-note" role="status">มีการแก้ไขที่ยังไม่บันทึก</div>}
-        <button className="primary-button wide" onClick={() => void saveStyles()} disabled={busy || styleText === savedStyle}>บันทึกกฎ</button>
-        <button className="text-button wide" onClick={() => void useDefaults()} disabled={busy}>ใช้กฎแนะนำแบบสั้น</button>
-      </aside>
+      <div className="rules-sidebar">
+        <GlossaryRulesEditor job={job} onChanged={onJobChanged} onDirtyChange={setGlossaryRulesDirty} />
+        <aside className="panel style-editor">
+          <div><span className="step-number">STYLE RULES</span><h2>กฎสไตล์</h2></div>
+          <p className="panel-description">ใช้ควบคุมสำนวนของการแปลประโยค หนึ่งกฎต่อบรรทัด</p>
+          <textarea rows={12} value={styleText} onChange={(event) => setStyleText(event.target.value)} aria-label="กฎสไตล์" />
+          {styleText !== savedStyle && <div className="dirty-note" role="status">มีการแก้ไขที่ยังไม่บันทึก</div>}
+          <button className="primary-button wide" onClick={() => void saveStyles()} disabled={busy || styleText === savedStyle}>บันทึกกฎ</button>
+          <button className="text-button wide" onClick={() => void useDefaults()} disabled={busy}>ใช้กฎแนะนำแบบสั้น</button>
+        </aside>
+      </div>
       <ConfirmDialog
         open={confirmGenerate}
         onOpenChange={setConfirmGenerate}
         title="สร้าง Glossary ใหม่?"
-        description="ระบบจะวิเคราะห์ข้อความทั้งไฟล์อีกครั้ง และแทนที่ Glossary ปัจจุบันเมื่อวิเคราะห์สำเร็จ"
+        description="ระบบจะวิเคราะห์ข้อความทั้งไฟล์อีกครั้ง และแทนที่ Glossary ปัจจุบันเมื่อวิเคราะห์สำเร็จ คำแปลที่สำเร็จแล้วจะไม่ถูกลบ"
         confirmLabel="เริ่มสร้างใหม่"
         busy={busy}
-        onConfirm={() => { setConfirmGenerate(false); void onGenerate(); }}
+        onConfirm={() => { if (!glossaryRulesDirty) { setConfirmGenerate(false); void onGenerate(); } }}
       />
     </div>
   );
