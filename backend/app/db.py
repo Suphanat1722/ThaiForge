@@ -10,6 +10,11 @@ from .config import ensure_storage, get_settings
 
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
+MIGRATION_BACKUPS = {
+    "004_quota_optimizer.sql": "thaiforge-pre-quota-optimizer.db",
+    "005_glossary_rules.sql": "thaiforge-pre-glossary-rules.db",
+    "007_context_columns.sql": "thaiforge-pre-context-columns.db",
+}
 
 
 class ClosingConnection(sqlite3.Connection):
@@ -58,6 +63,31 @@ def transaction(immediate: bool = False) -> Iterator[sqlite3.Connection]:
         connection.close()
 
 
+def _backup_before_migration(
+    connection: sqlite3.Connection,
+    migration_name: str,
+) -> None:
+    backup_filename = MIGRATION_BACKUPS.get(migration_name)
+    if not backup_filename:
+        return
+    job_count = connection.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+    if not job_count:
+        return
+
+    settings = get_settings()
+    backup_dir = settings.storage_dir / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_path = backup_dir / backup_filename
+    if backup_path.exists():
+        return
+
+    destination = sqlite3.connect(backup_path)
+    try:
+        connection.backup(destination)
+    finally:
+        destination.close()
+
+
 def initialize_database() -> None:
     with connect() as connection:
         connection.execute(
@@ -75,51 +105,7 @@ def initialize_database() -> None:
         for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
             if migration.name in applied:
                 continue
-            if migration.name == "004_quota_optimizer.sql":
-                job_count = connection.execute(
-                    "SELECT COUNT(*) FROM jobs"
-                ).fetchone()[0]
-                if job_count:
-                    settings = get_settings()
-                    backup_dir = settings.storage_dir / "backups"
-                    backup_dir.mkdir(parents=True, exist_ok=True)
-                    backup_path = backup_dir / "thaiforge-pre-quota-optimizer.db"
-                    if not backup_path.exists():
-                        destination = sqlite3.connect(backup_path)
-                        try:
-                            connection.backup(destination)
-                        finally:
-                            destination.close()
-            if migration.name == "005_glossary_rules.sql":
-                job_count = connection.execute(
-                    "SELECT COUNT(*) FROM jobs"
-                ).fetchone()[0]
-                if job_count:
-                    settings = get_settings()
-                    backup_dir = settings.storage_dir / "backups"
-                    backup_dir.mkdir(parents=True, exist_ok=True)
-                    backup_path = backup_dir / "thaiforge-pre-glossary-rules.db"
-                    if not backup_path.exists():
-                        destination = sqlite3.connect(backup_path)
-                        try:
-                            connection.backup(destination)
-                        finally:
-                            destination.close()
-            if migration.name == "007_context_columns.sql":
-                job_count = connection.execute(
-                    "SELECT COUNT(*) FROM jobs"
-                ).fetchone()[0]
-                if job_count:
-                    settings = get_settings()
-                    backup_dir = settings.storage_dir / "backups"
-                    backup_dir.mkdir(parents=True, exist_ok=True)
-                    backup_path = backup_dir / "thaiforge-pre-context-columns.db"
-                    if not backup_path.exists():
-                        destination = sqlite3.connect(backup_path)
-                        try:
-                            connection.backup(destination)
-                        finally:
-                            destination.close()
+            _backup_before_migration(connection, migration.name)
             connection.executescript(migration.read_text(encoding="utf-8"))
             connection.execute(
                 "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
