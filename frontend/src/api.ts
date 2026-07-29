@@ -46,6 +46,7 @@ export type Job = {
   preview: Record<string, string>[];
   source_column: string | null;
   target_column: string | null;
+  context_columns: string[];
   source_lang: string | null;
   target_lang: string | null;
   total_rows: number;
@@ -108,6 +109,7 @@ export type TranslationRow = {
   failure_class: string | null;
   retryable: number;
   next_attempt_at: string | null;
+  context: Record<string, string>;
   updated_at: string;
 };
 

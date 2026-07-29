@@ -105,6 +105,21 @@ def initialize_database() -> None:
                             connection.backup(destination)
                         finally:
                             destination.close()
+            if migration.name == "007_context_columns.sql":
+                job_count = connection.execute(
+                    "SELECT COUNT(*) FROM jobs"
+                ).fetchone()[0]
+                if job_count:
+                    settings = get_settings()
+                    backup_dir = settings.storage_dir / "backups"
+                    backup_dir.mkdir(parents=True, exist_ok=True)
+                    backup_path = backup_dir / "thaiforge-pre-context-columns.db"
+                    if not backup_path.exists():
+                        destination = sqlite3.connect(backup_path)
+                        try:
+                            connection.backup(destination)
+                        finally:
+                            destination.close()
             connection.executescript(migration.read_text(encoding="utf-8"))
             connection.execute(
                 "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",

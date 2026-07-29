@@ -247,6 +247,7 @@ def configure(job_id: str, payload: JobConfiguration) -> dict:
             inspection["delimiter"],
             inspection["headers"],
             inspection["preview"],
+            payload.context_columns,
         )
         return _public_job(configured)
     except CsvValidationError as exc:

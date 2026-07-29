@@ -12,6 +12,7 @@ class JobConfiguration(BaseModel):
     target_lang: str = Field(min_length=1)
     encoding: str | None = None
     delimiter: str | None = None
+    context_columns: list[str] = Field(default_factory=list)
 
     @field_validator("source_column", "target_column", "source_lang", "target_lang")
     @classmethod
@@ -20,6 +21,16 @@ class JobConfiguration(BaseModel):
         if not value:
             raise ValueError("ต้องไม่เป็นค่าว่าง")
         return value
+
+    @field_validator("context_columns")
+    @classmethod
+    def normalize_context_columns(cls, values: list[str]) -> list[str]:
+        result: list[str] = []
+        for value in values:
+            value = value.strip()
+            if value and value not in result:
+                result.append(value)
+        return result
 
 
 class GlossaryCreate(BaseModel):

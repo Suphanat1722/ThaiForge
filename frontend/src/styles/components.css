@@ -201,6 +201,18 @@ td input { min-width: 150px; }
 .row-number { color: var(--muted); font-variant-numeric: tabular-nums; }
 .row-error { display: block; margin-top: 8px; padding: 8px; border-radius: 6px; background: var(--red-soft); color: var(--red); white-space: normal; }
 .permanent-label { color: var(--red); }
+.context-columns-field { grid-column: 1 / -1; min-width: 0; margin: 0; padding: 0; border: 0; }
+.context-columns-field legend { color: var(--ink-soft); font-size: .8rem; font-weight: 700; }
+.context-columns-field legend small, .context-columns-field > p { color: var(--muted); font-size: .75rem; font-weight: 400; }
+.context-column-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin-top: 8px; }
+.context-column-options > label { display: flex; grid-template-columns: none; gap: 9px; align-items: flex-start; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper-strong); cursor: pointer; }
+.context-column-options > label.selected { border-color: var(--orange); background: var(--orange-soft); }
+.context-column-options label span, .context-column-options label small { display: block; min-width: 0; }
+.context-column-options label small { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.row-context { display: flex; flex-wrap: wrap; gap: 5px; margin: 7px 0 0; }
+.row-context > div { display: inline-flex; gap: 4px; padding: 3px 6px; border-radius: 6px; background: #eeece5; font-size: .7rem; }
+.row-context dt { color: var(--muted); }
+.row-context dd { margin: 0; color: var(--ink-soft); }
 .rotated { transform: rotate(180deg); }
 .review-hero { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 20px; }
 .review-hero .stage-icon { margin: 0; }

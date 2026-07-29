@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from .config import get_settings
+from .row_context import decode_context_columns, row_context
 from .tokens import segment_protected_text
 
 
@@ -29,7 +30,17 @@ def estimate_text_tokens(value: str) -> int:
 def estimate_row(row: dict) -> BatchEstimate:
     segments, _ = segment_protected_text(row.get("source_text", ""))
     source_tokens = sum(estimate_text_tokens(item["source_text"]) for item in segments)
-    structure_tokens = 8 + (len(segments) * 4)
+    context = row.get("context")
+    if context is None and row.get("original_data_json"):
+        context = row_context(
+            row["original_data_json"],
+            decode_context_columns(row.get("context_columns")),
+        )
+    context_tokens = sum(
+        estimate_text_tokens(str(name)) + estimate_text_tokens(str(value))
+        for name, value in (context or {}).items()
+    )
+    structure_tokens = 8 + (len(segments) * 4) + context_tokens
     return BatchEstimate(
         input_tokens=math.ceil((source_tokens + structure_tokens) * INPUT_SAFETY_MULTIPLIER),
         output_tokens=math.ceil(

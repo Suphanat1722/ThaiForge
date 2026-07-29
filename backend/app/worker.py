@@ -33,6 +33,7 @@ from .repository import (
     legacy_translation_fingerprint,
     translation_fingerprint,
 )
+from .row_context import context_for_row, decode_context_columns, row_context
 from .scanner import affected_reasons
 from .style_defaults import DEFAULT_STYLE_RULES
 from .tokens import (
@@ -116,16 +117,18 @@ def _record_attempt(
         )
 
 
-def _source_chunks(job_id: str) -> list[list[str]]:
+def _source_chunks(job_id: str) -> list[list[str | dict]]:
     settings = get_settings()
-    chunks: list[list[str]] = []
-    current: list[str] = []
+    chunks: list[list[str | dict]] = []
+    current: list[str | dict] = []
     current_chars = 0
     seen: set[str] = set()
+    job = get_job(job_id)
+    context_columns = job["context_columns"] if job else []
     with connect() as connection:
         rows = connection.execute(
             """
-            SELECT source_text FROM translation_rows
+            SELECT source_text, original_data_json FROM translation_rows
             WHERE job_id = ? AND TRIM(source_text) != ''
             ORDER BY row_index
             """,
@@ -135,19 +138,32 @@ def _source_chunks(job_id: str) -> list[list[str]]:
             text = clean_for_glossary(row["source_text"])
             if not text:
                 continue
-            key = normalize_term(text)
+            context = row_context(row["original_data_json"], context_columns)
+            sample: str | dict = (
+                {"text": text, "context": context} if context else text
+            )
+            serialized_size = len(json.dumps(sample, ensure_ascii=False))
+            key = normalize_term(
+                text
+                + (
+                    "\0"
+                    + "\0".join(f"{name}={value}" for name, value in context.items())
+                    if context
+                    else ""
+                )
+            )
             if key in seen:
                 continue
             seen.add(key)
             if current and (
                 len(current) >= settings.glossary_chunk_rows
-                or current_chars + len(text) > settings.glossary_chunk_chars
+                or current_chars + serialized_size > settings.glossary_chunk_chars
             ):
                 chunks.append(current)
                 current = []
                 current_chars = 0
-            current.append(text)
-            current_chars += len(text)
+            current.append(sample)
+            current_chars += serialized_size
     if current:
         chunks.append(current)
     return chunks
@@ -155,7 +171,7 @@ def _source_chunks(job_id: str) -> list[list[str]]:
 
 def _glossary_chunk_key(
     job: dict,
-    samples: list[str],
+    samples: list[str | dict],
     glossary_rules: list[str] | None = None,
 ) -> str:
     payload = {
@@ -166,6 +182,11 @@ def _glossary_chunk_key(
         "glossary_rules": glossary_rules or [],
         "samples": samples,
     }
+    context_columns = decode_context_columns(
+        job.get("context_columns", job.get("context_columns_json"))
+    )
+    if context_columns:
+        payload["context_columns"] = context_columns
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
 
@@ -183,6 +204,11 @@ def _glossary_refinement_key(
         "glossary_rules": glossary_rules or [],
         "candidates": candidates,
     }
+    context_columns = decode_context_columns(
+        job.get("context_columns", job.get("context_columns_json"))
+    )
+    if context_columns:
+        payload["context_columns"] = context_columns
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
 
@@ -608,6 +634,8 @@ def _claim_work(job_id: str) -> tuple[str, list[dict]]:
                 (job_id, now, settings.translation_candidate_pool_rows),
             ).fetchall()
         ]
+        for candidate in candidates:
+            candidate["context_columns"] = job["context_columns"]
         chosen = _take_with_budget(candidates)
         if chosen:
             ids = [row["id"] for row in chosen]
@@ -644,6 +672,8 @@ def _claim_work(job_id: str) -> tuple[str, list[dict]]:
                 (job_id, now, settings.translation_candidate_pool_rows),
             ).fetchall()
         ]
+        for request_row in request_rows:
+            request_row["context_columns"] = job["context_columns"]
         chosen = _take_with_budget(request_rows)
         if chosen:
             request_ids = [row["request_id"] for row in chosen]
@@ -1063,9 +1093,9 @@ def _process_batch(
         if kind == "retranslation" and _mark_request_noop(row, entries_by_id):
             continue
         matches = matching_entries(row["source_text"], active_entries)
-        fingerprint = translation_fingerprint(current_job, row["source_text"], matches, styles)
-        legacy_fingerprint = legacy_translation_fingerprint(
-            current_job, row["source_text"], matches, styles
+        context = context_for_row(row, current_job)
+        fingerprint = translation_fingerprint(
+            current_job, row["source_text"], matches, styles, context
         )
         row_entries[row["id"]] = matches
         fingerprints[row["id"]] = fingerprint
@@ -1077,7 +1107,10 @@ def _process_batch(
                 """,
                 (fingerprint,),
             ).fetchone()
-            if not cache:
+            if not cache and not context:
+                legacy_fingerprint = legacy_translation_fingerprint(
+                    current_job, row["source_text"], matches, styles
+                )
                 cache = connection.execute(
                     """
                     SELECT translated_text FROM translation_cache
@@ -1117,7 +1150,11 @@ def _process_batch(
                     fingerprints[member["id"]],
                 )
             continue
-        api_rows.append({"id": row["id"], "segments": segments})
+        api_row = {"id": row["id"], "segments": segments}
+        context = context_for_row(row, current_job)
+        if context:
+            api_row["context"] = context
+        api_rows.append(api_row)
         rows_for_api.append(row)
         groups_by_representative[row["id"]] = group
 

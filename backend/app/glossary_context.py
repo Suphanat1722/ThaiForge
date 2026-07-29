@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from .db import connect
+from .repository import get_job
+from .row_context import row_context
 from .tokens import clean_for_glossary, normalize_term, term_matches
 
 
@@ -49,11 +51,13 @@ def build_candidate_contexts(
     ]
     if not candidates:
         return []
+    job = get_job(job_id)
+    context_columns = job["context_columns"] if job else []
 
     with connect() as connection:
         rows = connection.execute(
             """
-            SELECT source_text FROM translation_rows
+            SELECT source_text, original_data_json FROM translation_rows
             WHERE job_id = ? AND TRIM(source_text) != ''
             ORDER BY row_index
             """,
@@ -68,10 +72,24 @@ def build_candidate_contexts(
                 if len(candidate["x"]) >= MAX_CONTEXT_EXAMPLES:
                     continue
                 excerpt = _context_excerpt(source_text, candidate["s"])
-                key = normalize_term(excerpt)
+                context = row_context(row["original_data_json"], context_columns)
+                example: str | dict = (
+                    {"text": excerpt, "context": context} if context else excerpt
+                )
+                key = normalize_term(
+                    excerpt
+                    + (
+                        "\0"
+                        + "\0".join(
+                            f"{name}={value}" for name, value in context.items()
+                        )
+                        if context
+                        else ""
+                    )
+                )
                 if key and key not in candidate["_seen"]:
                     candidate["_seen"].add(key)
-                    candidate["x"].append(excerpt)
+                    candidate["x"].append(example)
 
     return [
         {

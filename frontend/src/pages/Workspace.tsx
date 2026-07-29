@@ -50,6 +50,10 @@ import {
   type WorkspaceView,
   viewForStatus,
 } from "../lib/format";
+import {
+  availableContextColumns,
+  previewColumnValues,
+} from "../lib/contextColumns";
 import { navigate } from "../lib/navigation";
 
 const STAGES: { value: WorkspaceView; label: string; short: string }[] = [
@@ -107,10 +111,21 @@ function ConfigurationPanel({ job, onDone }: { job: Job; onDone(): Promise<void>
   const [targetLang, setTargetLang] = useState(job.target_lang ?? "ไทย");
   const [encoding, setEncoding] = useState(job.encoding);
   const [delimiter, setDelimiter] = useState(job.delimiter);
+  const [contextColumns, setContextColumns] = useState<string[]>(
+    job.context_columns ?? [],
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const targetColumn = targetChoice === "__new__" ? newTargetColumn.trim() : targetChoice;
   const editable = ["uploaded", "configured"].includes(job.status);
+  const contextOptions = availableContextColumns(
+    job.headers,
+    sourceColumn,
+    targetColumn,
+  );
+  const selectedContextColumns = contextColumns.filter((column) =>
+    contextOptions.includes(column),
+  );
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -124,6 +139,7 @@ function ConfigurationPanel({ job, onDone }: { job: Job; onDone(): Promise<void>
         target_lang: targetLang,
         encoding,
         delimiter,
+        context_columns: selectedContextColumns,
       });
       toast.success("บันทึกโครงสร้างไฟล์แล้ว");
       await onDone();
@@ -146,6 +162,7 @@ function ConfigurationPanel({ job, onDone }: { job: Job; onDone(): Promise<void>
           <dl className="definition-grid">
             <div><dt>คอลัมน์ต้นฉบับ</dt><dd>{job.source_column}</dd></div>
             <div><dt>คอลัมน์ผลลัพธ์</dt><dd>{job.target_column}</dd></div>
+            <div><dt>Context Columns</dt><dd>{job.context_columns.length ? job.context_columns.join(", ") : "ไม่ได้เลือก"}</dd></div>
             <div><dt>ภาษา</dt><dd>{job.source_lang} → {job.target_lang}</dd></div>
             <div><dt>รูปแบบไฟล์</dt><dd>{job.encoding} · {job.delimiter === "\t" ? "TAB" : job.delimiter}</dd></div>
           </dl>
@@ -193,6 +210,34 @@ function ConfigurationPanel({ job, onDone }: { job: Job; onDone(): Promise<void>
               <option value={"\t"}>Tab</option><option value="|">Pipe (|)</option>
             </select>
           </label>
+          <fieldset className="context-columns-field">
+            <legend>Context Columns <small>ไม่บังคับ · เลือกได้หลายคอลัมน์</small></legend>
+            <p>ส่งข้อมูลประกอบรายแถวให้ AI เพื่อช่วยเลือกความหมาย โดยไม่แปลหรือแก้ไขค่าเหล่านี้</p>
+            <div className="context-column-options">
+              {contextOptions.map((header) => {
+                const values = previewColumnValues(job.preview, header);
+                const checked = selectedContextColumns.includes(header);
+                return (
+                  <label key={header} className={checked ? "selected" : ""}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => setContextColumns((current) =>
+                        current.includes(header)
+                          ? current.filter((column) => column !== header)
+                          : [...current, header]
+                      )}
+                    />
+                    <span>
+                      <strong>{header}</strong>
+                      <small>{values.length ? values.join(" · ") : "ตัวอย่างเป็นค่าว่าง"}</small>
+                    </span>
+                  </label>
+                );
+              })}
+              {!contextOptions.length && <small>ไม่มีคอลัมน์อื่นที่เลือกเป็น Context ได้</small>}
+            </div>
+          </fieldset>
         </div>
         <button className="primary-button" disabled={busy || !targetColumn}>
           {busy ? <Spinner label="กำลังเตรียมแถว" /> : <>ยืนยันโครงสร้าง <ChevronRight /></>}
@@ -727,7 +772,16 @@ function RowsPanel({ job, onChanged }: { job: Job; onChanged(): Promise<void> })
               return (
                 <tr key={row.id}>
                   <td data-label="#" className="row-number">{row.row_index + 1}</td>
-                  <td data-label="ต้นฉบับ" className="text-cell" title={row.source_text}>{row.source_text || "—"}</td>
+                  <td data-label="ต้นฉบับ" className="text-cell" title={row.source_text}>
+                    {row.source_text || "—"}
+                    {Object.keys(row.context).length > 0 && (
+                      <dl className="row-context">
+                        {Object.entries(row.context).map(([name, value]) => (
+                          <div key={name}><dt>{name}</dt><dd>{value}</dd></div>
+                        ))}
+                      </dl>
+                    )}
+                  </td>
                   <td data-label="ผลลัพธ์" className="text-cell" title={row.translated_text ?? row.original_target}>{(row.translated_text ?? row.original_target) || "—"}
                     {row.last_error && isExpanded && <small className="row-error">{row.last_error}</small>}
                   </td>

@@ -12,6 +12,7 @@ from .config import get_settings
 from .csv_service import iter_csv_rows
 from .db import connect, transaction, utc_now
 from .glossary_rules import clean_glossary_rules
+from .row_context import decode_context_columns, row_context
 from .tokens import extract_protected_tokens
 
 
@@ -38,6 +39,9 @@ def _decode_job(row: sqlite3.Row | None) -> dict | None:
     job = dict(row)
     job["headers"] = json.loads(job.pop("headers_json"))
     job["preview"] = json.loads(job.pop("preview_json"))
+    job["context_columns"] = decode_context_columns(
+        job.pop("context_columns_json", "[]")
+    )
     return job
 
 
@@ -101,6 +105,7 @@ def configure_job(
     delimiter: str,
     headers: list[str],
     preview: list[dict],
+    context_columns: list[str] | None = None,
 ) -> dict:
     job = get_job(job_id)
     if not job:
@@ -109,6 +114,16 @@ def configure_job(
         raise ValueError("งานนี้ไม่สามารถเปลี่ยน mapping ได้แล้ว")
     if source_column not in headers:
         raise ValueError("ไม่พบ Source column")
+    context_columns = list(dict.fromkeys(context_columns or []))
+    invalid_context = [
+        column
+        for column in context_columns
+        if column not in headers or column in {source_column, target_column}
+    ]
+    if invalid_context:
+        raise ValueError(
+            "Context Columns ต้องเป็นคอลัมน์ที่มีอยู่และห้ามซ้ำกับ Source/Target"
+        )
     export_headers = list(headers)
     if target_column not in export_headers:
         export_headers.append(target_column)
@@ -173,6 +188,7 @@ def configure_job(
                 status = 'configured', encoding = ?, delimiter = ?,
                 headers_json = ?, preview_json = ?, source_column = ?,
                 target_column = ?, source_lang = ?, target_lang = ?,
+                context_columns_json = ?,
                 total_rows = ?, completed_rows = ?, last_error = NULL, updated_at = ?
             WHERE id = ?
             """,
@@ -185,6 +201,7 @@ def configure_job(
                 target_column,
                 source_lang,
                 target_lang,
+                json.dumps(context_columns, ensure_ascii=False),
                 total_rows,
                 completed,
                 now,
@@ -295,13 +312,19 @@ def paginate_rows(
                 f"""
                 SELECT id, row_index, source_text, original_target, translated_text,
                        status, total_attempts, last_error, failure_class,
-                       retryable, next_attempt_at, updated_at
+                       retryable, next_attempt_at, updated_at, original_data_json
                 FROM translation_rows WHERE {where}
                 ORDER BY row_index LIMIT ? OFFSET ?
                 """,
                 [*params, page_size, offset],
             ).fetchall()
         ]
+        job = get_job(job_id, connection)
+        context_columns = job["context_columns"] if job else []
+        for item in items:
+            item["context"] = row_context(
+                item.pop("original_data_json", None), context_columns
+            )
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
@@ -624,6 +647,7 @@ def translation_fingerprint(
     source_text: str,
     entries: Iterable[dict],
     style_rules: Iterable[dict],
+    context: dict[str, str] | None = None,
 ) -> str:
     payload = {
         "policy": "compact-v2",
@@ -647,6 +671,11 @@ def translation_fingerprint(
         ),
         "style": sorted(rule["rule_text"] for rule in style_rules),
     }
+    if context:
+        payload["context"] = context
+    context_columns = job.get("context_columns", [])
+    if context_columns:
+        payload["context_columns"] = list(context_columns)
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
 
