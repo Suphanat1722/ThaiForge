@@ -1,0 +1,3 @@
+ALTER TABLE jobs ADD COLUMN glossary_chunks_total INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE jobs ADD COLUMN glossary_chunks_completed INTEGER NOT NULL DEFAULT 0;
+

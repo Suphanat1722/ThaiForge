@@ -1,0 +1,46 @@
+* { box-sizing: border-box; }
+html { background: var(--canvas); color: var(--ink); }
+body { margin: 0; min-width: 320px; min-height: 100vh; background:
+  radial-gradient(circle at 10% 0%, rgb(255 255 255 / 68%), transparent 28rem),
+  var(--canvas);
+}
+button, input, select, textarea { font: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
+button { border: 0; }
+a { color: inherit; text-decoration: none; }
+h1, h2, p { margin-top: 0; }
+h1 { letter-spacing: -.035em; }
+h2 { font-size: 1.25rem; letter-spacing: -.02em; }
+small { color: var(--muted); }
+svg { width: 1.05em; height: 1.05em; stroke-width: 1.9; flex: none; }
+main { width: min(calc(100% - 48px), var(--content)); margin: 0 auto; padding: 34px 0 72px; }
+input, select, textarea {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper-strong);
+  color: var(--ink);
+  padding: 10px 12px;
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+textarea { resize: vertical; line-height: 1.6; }
+input:focus, select:focus, textarea:focus {
+  border-color: var(--green-2);
+  box-shadow: 0 0 0 3px rgb(40 97 79 / 13%);
+}
+button:focus-visible, a:focus-visible, [role="button"]:focus-visible {
+  outline: 3px solid rgb(223 91 52 / 35%);
+  outline-offset: 3px;
+}
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+.muted { color: var(--muted); }
+.eyebrow, .step-number {
+  display: block; margin-bottom: 7px; color: var(--orange); font-size: .7rem;
+  font-weight: 800; letter-spacing: .12em;
+}
+

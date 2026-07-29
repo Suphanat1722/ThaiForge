@@ -1,0 +1,31 @@
+:root {
+  color-scheme: light;
+  font-family: "Leelawadee UI", "Noto Sans Thai", "Tahoma", system-ui, sans-serif;
+  --ink: #17231f;
+  --ink-soft: #3f4e48;
+  --muted: #6e7a75;
+  --canvas: #f2efe7;
+  --paper: #fffdf8;
+  --paper-strong: #ffffff;
+  --line: #ddd9ce;
+  --line-strong: #c9c5ba;
+  --green: #1c4438;
+  --green-2: #28614f;
+  --green-soft: #e2eee8;
+  --orange: #df5b34;
+  --orange-dark: #bd4524;
+  --orange-soft: #fff0ea;
+  --red: #b43b34;
+  --red-soft: #fdecea;
+  --amber: #9b6916;
+  --amber-soft: #fff5d8;
+  --shadow-sm: 0 1px 2px rgb(23 35 31 / 5%), 0 7px 24px rgb(23 35 31 / 4%);
+  --shadow-lg: 0 24px 70px rgb(20 35 30 / 18%);
+  --radius-sm: 8px;
+  --radius: 14px;
+  --radius-lg: 22px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --content: 1440px;
+}
+
