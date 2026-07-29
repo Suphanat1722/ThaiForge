@@ -1,4 +1,4 @@
-# ThaiForge V2
+# ThaiForge
 
 ระบบแปลไฟล์ CSV สำหรับงานเกมด้วย Gemini, AI Glossary และ durable background worker
 ที่รองรับ pause/resume, retry และแปลใหม่เฉพาะแถวที่ได้รับผลกระทบจากการแก้ Glossary
