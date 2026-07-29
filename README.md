@@ -63,9 +63,3 @@ tests/             ชุดทดสอบ backend และ workflow
 docs/              เอกสารสเปกและเอกสารประกอบ
 storage/           ฐานข้อมูล ไฟล์งาน และ log ที่สร้างขณะใช้งาน
 ```
-
-อ่านสเปกตั้งต้นได้ที่
-[`docs/csv-translation-system-spec.md`](docs/csv-translation-system-spec.md)
-
-โฟลเดอร์ `.venv`, `frontend/node_modules` และ `frontend/dist` เป็นไฟล์ที่สร้างใหม่ได้
-และไม่จำเป็นต้องเก็บไว้ใน source control โดย `start.cmd` จะติดตั้งและ build ให้เมื่อเปิดระบบ
