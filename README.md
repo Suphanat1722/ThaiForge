@@ -1,44 +1,50 @@
 # ThaiForge
 
-ระบบแปลไฟล์ CSV สำหรับงานเกมด้วย Gemini, AI Glossary และ durable background worker
-ที่รองรับ pause/resume, retry และแปลใหม่เฉพาะแถวที่ได้รับผลกระทบจากการแก้ Glossary
+A CSV file translation system for game localization, powered by Gemini, an AI Glossary, and a durable background worker.
 
-## เริ่มใช้งานบน Windows
+It supports pause/resume, retries, and selective retranslation of only the rows affected by Glossary changes.
 
-1. คัดลอก `.env.example` เป็น `.env` และใส่ `GEMINI_API_KEY`
-2. ดับเบิลคลิก `start.cmd` หรือรัน:
+## Getting Started on Windows
+
+1. Copy `.env.example` to `.env` and add your `GEMINI_API_KEY`.
+2. Double-click `start.cmd`, or run:
 
    ```powershell
    powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1
    ```
 
-สคริปต์จะเตรียม Python environment, ติดตั้ง dependency, build หน้าเว็บ และเปิด
-`http://127.0.0.1:8000` โดยอัตโนมัติ ข้อมูลทั้งหมดอยู่ในโฟลเดอร์ `storage/`
+The script will set up the Python environment, install dependencies, build the web interface, and automatically open:
+
+`http://127.0.0.1:8000`
+
+All data is stored in the `storage/` folder.
 
 ## Workflow
 
-1. อัปโหลด CSV และตรวจ encoding/delimiter
-2. เลือก Source/Target column และภาษา
-3. ให้ Gemini สร้าง Glossary แล้วตรวจแก้ก่อนเริ่ม
-4. เริ่มแปล ติดตาม progress, pause/resume และ retry แถวที่ล้มเหลว
-5. หลังแก้ Glossary ใช้ Local Scan เพื่อเลือกเฉพาะแถวที่ต้องแปลใหม่
-6. Export CSV แบบ UTF-8 BOM หรือดาวน์โหลด error report
+1. Upload a CSV file and verify its encoding and delimiter.
+2. Select the source and target columns, along with the source and target languages.
+3. Have Gemini generate a Glossary, then review and edit it before starting.
+4. Start the translation, monitor progress, pause or resume the job, and retry failed rows.
+5. After editing the Glossary, use Local Scan to select only the rows that need to be retranslated.
+6. Export the CSV with UTF-8 BOM encoding or download an error report.
 
-ระบบแปลครั้งละหนึ่งงาน การปิดแท็บเบราว์เซอร์ไม่หยุด worker แต่การปิดหน้าต่าง
-launcher จะหยุด API และ worker; เมื่อเปิดใหม่ งานเดิมสามารถ Resume จาก checkpoint ได้
+The system processes one translation job at a time. Closing the browser tab does not stop the worker. However, closing the launcher window stops both the API and the worker.
 
-## การใช้โควต้า Gemini
+When the system is launched again, the previous job can resume from its checkpoint.
 
-ระบบจัด batch ตาม token โดยอัตโนมัติและรวมข้อความซ้ำก่อนเรียก Gemini ค่าเริ่มต้น
-รองรับสูงสุด 500 ข้อความไม่ซ้ำต่อ request ภายใต้งบ input 120,000 และ output
-45,000 tokens ผลแปลใน cache สามารถใช้ข้ามงานได้เมื่อภาษา Glossary และ Style
-ตรงกันทุกประการ
+## Gemini Quota Usage
 
-ข้อผิดพลาดชั่วคราวจะลองใหม่อัตโนมัติสูงสุดหนึ่งครั้ง ส่วนข้อผิดพลาดถาวรจะไม่ถูก
-นำกลับเข้าคิวโดยปุ่ม Retry รวม เพื่อไม่ใช้โควต้าโดยไม่จำเป็น เมื่อโควต้ารายวันเต็ม
-ระบบยังคง Pause และ Resume อัตโนมัติตามเดิม
+The system automatically creates batches based on token usage and deduplicates repeated text before sending requests to Gemini.
 
-## พัฒนาและทดสอบ
+By default, each request supports up to 500 unique messages within an input budget of 120,000 tokens and an output budget of 45,000 tokens.
+
+Cached translations can be reused across jobs when the languages, Glossary, and Style settings match exactly.
+
+Temporary errors are retried automatically up to one time. Permanent errors are excluded from the bulk Retry queue to avoid unnecessary quota usage.
+
+When the daily quota is exhausted, the system continues to pause and resume automatically as usual.
+
+## Development and Testing
 
 ```powershell
 python -m pip install -r requirements-dev.txt
@@ -48,18 +54,20 @@ npm.cmd install
 npm.cmd run build
 ```
 
-API documentation ขณะระบบทำงานอยู่ที่ `http://127.0.0.1:8000/docs`
+While the system is running, the API documentation is available at:
 
-## โครงสร้างโปรเจกต์
+`http://127.0.0.1:8000/docs`
+
+## Project Structure
 
 ```text
 backend/
-  app/             FastAPI, worker, database และบริการ Gemini
+  app/             FastAPI, worker, database, and Gemini services
   app/migrations/  SQLite migrations
 frontend/
   src/             React application
-scripts/           สคริปต์เปิดระบบบน Windows
-tests/             ชุดทดสอบ backend และ workflow
-docs/              เอกสารสเปกและเอกสารประกอบ
-storage/           ฐานข้อมูล ไฟล์งาน และ log ที่สร้างขณะใช้งาน
+scripts/           Windows launcher scripts
+tests/             Backend and workflow test suites
+docs/              Specifications and supporting documentation
+storage/           Database, job files, and logs generated during use
 ```
