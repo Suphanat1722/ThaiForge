@@ -262,6 +262,46 @@ def test_tokens_are_rebuilt_locally_without_repair_calls():
         assert fake.calls == 3  # extraction, context refinement, translation
 
 
+def test_review_can_edit_completed_translation_without_touching_other_rows():
+    fake = FakeGemini()
+    with TestClient(app) as client:
+        job_id = create_configured_job(client)
+        client.post(f"/api/jobs/{job_id}/glossary/generate")
+        run_once(service=fake)
+        client.post(f"/api/jobs/{job_id}/start")
+        while client.get(f"/api/jobs/{job_id}/status").json()["status"] == "running":
+            run_once(service=fake)
+
+        rows = client.get(f"/api/jobs/{job_id}/rows").json()["items"]
+        token_row = next(row for row in rows if "{name}" in row["source_text"])
+        untouched = next(row for row in rows if row["id"] != token_row["id"])
+
+        missing_token = client.patch(
+            f"/api/jobs/{job_id}/rows/{token_row['id']}",
+            json={"translated_text": "แก้มือโดยทำ token หาย"},
+        )
+        assert missing_token.status_code == 400
+
+        updated = client.patch(
+            f"/api/jobs/{job_id}/rows/{token_row['id']}",
+            json={"translated_text": "สวัสดี {name} — แก้มือแล้ว"},
+        )
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["translated_text"] == "สวัสดี {name} — แก้มือแล้ว"
+
+        refreshed = client.get(f"/api/jobs/{job_id}/rows").json()["items"]
+        edited = next(row for row in refreshed if row["id"] == token_row["id"])
+        still_untouched = next(row for row in refreshed if row["id"] == untouched["id"])
+        assert edited["translated_text"] == "สวัสดี {name} — แก้มือแล้ว"
+        assert still_untouched["translated_text"] == untouched["translated_text"]
+        assert edited["status"] == "done"
+
+        exported = client.get(f"/api/jobs/{job_id}/export")
+        export_text = exported.content.decode("utf-8-sig")
+        assert "สวัสดี {name} — แก้มือแล้ว" in export_text
+        assert "แปล: Use Potion" in export_text
+
+
 def test_permanent_failure_is_not_retried_and_does_not_spend_more_quota():
     good = FakeGemini()
     with TestClient(app) as client:

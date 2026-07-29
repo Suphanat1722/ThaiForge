@@ -121,6 +121,8 @@ button:disabled { opacity: .42; cursor: not-allowed; transform: none; }
 .density-compact .glossary-table { max-height: 650px; }
 .density-toggle { border: 1px solid var(--line); background: var(--paper-strong); }
 .workspace-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+.workspace-grid > * { min-width: 0; }
+.config-workspace { grid-template-columns: minmax(460px, 520px) minmax(0, 1fr); }
 .panel { border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); padding: 24px; box-shadow: var(--shadow-sm); }
 .panel-description { color: var(--muted); font-size: .88rem; line-height: 1.65; }
 .badge, .origin-badge, .success-badge {
@@ -131,6 +133,24 @@ button:disabled { opacity: .42; cursor: not-allowed; transform: none; }
 .success-badge svg { width: 13px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 22px 0; }
 .form-grid label { display: grid; gap: 7px; color: var(--ink-soft); font-size: .8rem; font-weight: 700; }
+.config-panel { min-width: 0; }
+.config-sections { display: grid; gap: 0; margin-top: 20px; border-block: 1px solid var(--line); }
+.config-section { min-width: 0; padding: 20px 0; border-bottom: 1px solid var(--line); }
+.config-section:last-child { border-bottom: 0; }
+.config-section-heading { display: grid; gap: 5px; margin-bottom: 14px; }
+.config-section-heading > div, .config-section-title { display: flex; align-items: center; gap: 9px; }
+.config-section-heading > div > span, .config-section-title > span {
+  width: 22px; height: 22px; display: grid; place-items: center; flex: none;
+  border-radius: 50%; background: var(--green-soft); color: var(--green-2); font-size: .68rem; font-weight: 800;
+}
+.config-section-heading h3, .config-section-title strong { margin: 0; color: var(--ink); font-size: .92rem; letter-spacing: -.01em; }
+.config-section-heading p, .context-columns-field > p { margin: 0 0 0 31px; color: var(--muted); font-size: .75rem; line-height: 1.5; }
+.config-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.config-fields label { display: grid; gap: 7px; min-width: 0; color: var(--ink-soft); font-size: .78rem; font-weight: 700; }
+.config-fields label > span { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.config-fields label b { color: var(--orange); font-size: .62rem; font-weight: 700; }
+.config-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 18px; }
+.config-actions > small { max-width: 220px; line-height: 1.45; }
 .config-summary .definition-grid { margin-bottom: 18px; }
 .definition-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .definition-grid > div { padding: 14px; border-radius: 10px; background: #f4f1e9; }
@@ -201,14 +221,36 @@ td input { min-width: 150px; }
 .row-number { color: var(--muted); font-variant-numeric: tabular-nums; }
 .row-error { display: block; margin-top: 8px; padding: 8px; border-radius: 6px; background: var(--red-soft); color: var(--red); white-space: normal; }
 .permanent-label { color: var(--red); }
-.context-columns-field { grid-column: 1 / -1; min-width: 0; margin: 0; padding: 0; border: 0; }
-.context-columns-field legend { color: var(--ink-soft); font-size: .8rem; font-weight: 700; }
-.context-columns-field legend small, .context-columns-field > p { color: var(--muted); font-size: .75rem; font-weight: 400; }
-.context-column-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin-top: 8px; }
-.context-column-options > label { display: flex; grid-template-columns: none; gap: 9px; align-items: flex-start; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper-strong); cursor: pointer; }
-.context-column-options > label.selected { border-color: var(--orange); background: var(--orange-soft); }
+.editing-row { background: #faf8f2; }
+.translation-editor { display: grid; gap: 6px; min-width: min(440px, 45vw); }
+.translation-editor textarea { min-height: 116px; line-height: 1.55; }
+.translation-editor small { line-height: 1.45; }
+.edit-translation-button { white-space: nowrap; }
+.edit-translation-button svg { color: var(--green-2); }
+.context-columns-field { margin: 0; border-inline: 0; border-top: 0; }
+.context-columns-field > .config-section-heading {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0;
+}
+.optional-badge, .context-selection-summary {
+  width: fit-content; border-radius: 999px; background: #eeece5; color: var(--muted); font-size: .66rem; font-weight: 700;
+}
+.optional-badge { padding: 4px 7px; }
+.context-selection-summary { margin: 12px 0 0 31px; padding: 5px 8px; background: var(--green-soft); color: var(--green-2); }
+.context-column-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.context-column-options > label {
+  display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 9px; align-items: center; min-width: 0;
+  padding: 10px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper-strong); cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease, transform 120ms var(--ease-out);
+}
+.context-column-options > label:active { transform: scale(.98); }
+.context-column-options > label.selected { border-color: var(--green-2); background: var(--green-soft); }
+.context-column-options input[type="checkbox"] {
+  width: 17px; height: 17px; min-height: 0; margin: 0; padding: 0; border-radius: 4px; accent-color: var(--green-2);
+  box-shadow: none;
+}
 .context-column-options label span, .context-column-options label small { display: block; min-width: 0; }
-.context-column-options label small { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.context-column-options label strong { display: block; overflow: hidden; color: var(--ink); font-size: .77rem; text-overflow: ellipsis; white-space: nowrap; }
+.context-column-options label small { display: block; overflow: hidden; margin-top: 2px; color: var(--muted); font-size: .68rem; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 .row-context { display: flex; flex-wrap: wrap; gap: 5px; margin: 7px 0 0; }
 .row-context > div { display: inline-flex; gap: 4px; padding: 3px 6px; border-radius: 6px; background: #eeece5; font-size: .7rem; }
 .row-context dt { color: var(--muted); }

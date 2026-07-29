@@ -328,6 +328,45 @@ def paginate_rows(
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
+def update_row_translation(job_id: str, row_id: str, translated_text: str) -> dict:
+    now = utc_now()
+    with transaction(immediate=True) as connection:
+        job = get_job(job_id, connection)
+        if not job:
+            raise KeyError(job_id)
+        if job["status"] not in {"completed", "completed_with_errors", "paused"}:
+            raise ValueError("แก้คำแปลได้เมื่อหยุดงานหรืออยู่ในขั้นตรวจสอบเท่านั้น")
+        row = connection.execute(
+            """
+            SELECT id, source_text, status FROM translation_rows
+            WHERE id = ? AND job_id = ?
+            """,
+            (row_id, job_id),
+        ).fetchone()
+        if row is None:
+            raise KeyError(row_id)
+        if row["status"] != "done":
+            raise ValueError("แก้มือได้เฉพาะแถวที่แปลสำเร็จแล้ว")
+        connection.execute(
+            """
+            UPDATE translation_rows SET translated_text = ?,
+                translation_fingerprint = NULL, updated_at = ?
+            WHERE id = ? AND job_id = ? AND status = 'done'
+            """,
+            (translated_text, now, row_id, job_id),
+        )
+        connection.execute(
+            "UPDATE jobs SET updated_at = ? WHERE id = ?",
+            (now, job_id),
+        )
+    return {
+        "id": row_id,
+        "translated_text": translated_text,
+        "status": "done",
+        "updated_at": now,
+    }
+
+
 def list_glossary(job_id: str, include_deleted: bool = False) -> list[dict]:
     where = "job_id = ?" if include_deleted else "job_id = ? AND is_deleted = 0"
     with connect() as connection:

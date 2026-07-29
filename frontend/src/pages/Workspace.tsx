@@ -174,45 +174,69 @@ function ConfigurationPanel({ job, onDone }: { job: Job; onDone(): Promise<void>
   }
 
   return (
-    <div className="workspace-grid">
+    <div className="workspace-grid config-workspace">
       <form className="panel config-panel" onSubmit={save}>
         <div className="panel-heading">
-          <div><span className="step-number">01 · FILE SETUP</span><h2>กำหนดคอลัมน์และภาษา</h2></div>
+          <div><span className="step-number">01 · FILE SETUP</span><h2>ตั้งค่าไฟล์สำหรับแปล</h2></div>
           <span className="badge">{job.encoding} · {job.delimiter === "\t" ? "TAB" : job.delimiter}</span>
         </div>
         {error && <ErrorBanner message={error} onClose={() => setError("")} />}
-        <div className="form-grid">
-          <label><span>คอลัมน์ต้นฉบับ</span>
-            <select value={sourceColumn} onChange={(event) => setSourceColumn(event.target.value)}>
-              {job.headers.map((header) => <option key={header}>{header}</option>)}
-            </select>
-          </label>
-          <label><span>คอลัมน์ผลลัพธ์</span>
-            <select value={targetChoice} onChange={(event) => setTargetChoice(event.target.value)}>
-              {job.headers.map((header) => <option key={header}>{header}</option>)}
-              <option value="__new__">＋ สร้างคอลัมน์ใหม่</option>
-            </select>
-            {targetChoice === "__new__" && (
-              <input value={newTargetColumn} onChange={(event) => setNewTargetColumn(event.target.value)} required aria-label="ชื่อคอลัมน์ใหม่" />
+        <div className="config-sections">
+          <section className="config-section">
+            <div className="config-section-heading">
+              <div><span>1</span><h3>เลือกคอลัมน์คำแปล</h3></div>
+              <p>เลือกข้อความต้นฉบับและตำแหน่งที่จะบันทึกผลลัพธ์</p>
+            </div>
+            <div className="config-fields">
+              <label><span>คอลัมน์ต้นฉบับ <b>จำเป็น</b></span>
+                <select value={sourceColumn} onChange={(event) => setSourceColumn(event.target.value)}>
+                  {job.headers.map((header) => <option key={header}>{header}</option>)}
+                </select>
+              </label>
+              <label><span>คอลัมน์ผลลัพธ์ <b>จำเป็น</b></span>
+                <select value={targetChoice} onChange={(event) => setTargetChoice(event.target.value)}>
+                  {job.headers.map((header) => <option key={header}>{header}</option>)}
+                  <option value="__new__">＋ สร้างคอลัมน์ใหม่</option>
+                </select>
+                {targetChoice === "__new__" && (
+                  <input value={newTargetColumn} onChange={(event) => setNewTargetColumn(event.target.value)} required aria-label="ชื่อคอลัมน์ใหม่" />
+                )}
+              </label>
+            </div>
+          </section>
+
+          <section className="config-section">
+            <div className="config-section-heading">
+              <div><span>2</span><h3>ภาษาและรูปแบบไฟล์</h3></div>
+              <p>ตรวจสอบภาษา, encoding และตัวคั่นก่อนเริ่มงาน</p>
+            </div>
+            <div className="config-fields">
+              <label><span>ภาษาต้นทาง</span><input value={sourceLang} onChange={(event) => setSourceLang(event.target.value)} required /></label>
+              <label><span>ภาษาปลายทาง</span><input value={targetLang} onChange={(event) => setTargetLang(event.target.value)} required /></label>
+              <label><span>Encoding</span>
+                <select value={encoding} onChange={(event) => setEncoding(event.target.value)}>
+                  <option value="utf-8">UTF-8</option><option value="utf-8-sig">UTF-8 BOM</option>
+                  <option value="cp874">Windows-874</option><option value="tis-620">TIS-620</option>
+                </select>
+              </label>
+              <label><span>Delimiter</span>
+                <select value={delimiter} onChange={(event) => setDelimiter(event.target.value)}>
+                  <option value=",">Comma (,)</option><option value=";">Semicolon (;)</option>
+                  <option value={"\t"}>Tab</option><option value="|">Pipe (|)</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <fieldset className="config-section context-columns-field">
+            <legend className="config-section-heading">
+              <span className="config-section-title"><span>3</span><strong>ข้อมูลประกอบการแปล</strong></span>
+              <span className="optional-badge">ไม่บังคับ</span>
+            </legend>
+            <p>เลือกข้อมูลที่ช่วยให้ AI เข้าใจผู้พูด ฉาก หรือเหตุการณ์ โดยระบบจะไม่แปลค่าเหล่านี้</p>
+            {selectedContextColumns.length > 0 && (
+              <div className="context-selection-summary">เลือกแล้ว {selectedContextColumns.length} คอลัมน์</div>
             )}
-          </label>
-          <label><span>ภาษาต้นทาง</span><input value={sourceLang} onChange={(event) => setSourceLang(event.target.value)} required /></label>
-          <label><span>ภาษาปลายทาง</span><input value={targetLang} onChange={(event) => setTargetLang(event.target.value)} required /></label>
-          <label><span>Encoding</span>
-            <select value={encoding} onChange={(event) => setEncoding(event.target.value)}>
-              <option value="utf-8">UTF-8</option><option value="utf-8-sig">UTF-8 BOM</option>
-              <option value="cp874">Windows-874</option><option value="tis-620">TIS-620</option>
-            </select>
-          </label>
-          <label><span>Delimiter</span>
-            <select value={delimiter} onChange={(event) => setDelimiter(event.target.value)}>
-              <option value=",">Comma (,)</option><option value=";">Semicolon (;)</option>
-              <option value={"\t"}>Tab</option><option value="|">Pipe (|)</option>
-            </select>
-          </label>
-          <fieldset className="context-columns-field">
-            <legend>Context Columns <small>ไม่บังคับ · เลือกได้หลายคอลัมน์</small></legend>
-            <p>ส่งข้อมูลประกอบรายแถวให้ AI เพื่อช่วยเลือกความหมาย โดยไม่แปลหรือแก้ไขค่าเหล่านี้</p>
             <div className="context-column-options">
               {contextOptions.map((header) => {
                 const values = previewColumnValues(job.preview, header);
@@ -230,7 +254,7 @@ function ConfigurationPanel({ job, onDone }: { job: Job; onDone(): Promise<void>
                     />
                     <span>
                       <strong>{header}</strong>
-                      <small>{values.length ? values.join(" · ") : "ตัวอย่างเป็นค่าว่าง"}</small>
+                      <small>{values.length ? `เช่น ${values.join(" · ")}` : "ไม่มีค่าตัวอย่าง"}</small>
                     </span>
                   </label>
                 );
@@ -239,9 +263,12 @@ function ConfigurationPanel({ job, onDone }: { job: Job; onDone(): Promise<void>
             </div>
           </fieldset>
         </div>
-        <button className="primary-button" disabled={busy || !targetColumn}>
-          {busy ? <Spinner label="กำลังเตรียมแถว" /> : <>ยืนยันโครงสร้าง <ChevronRight /></>}
-        </button>
+        <div className="config-actions">
+          <small>ตรวจสอบตัวอย่างข้อมูลด้านข้างก่อนยืนยัน</small>
+          <button className="primary-button" disabled={busy || !targetColumn}>
+            {busy ? <Spinner label="กำลังเตรียมแถว" /> : <>ยืนยันโครงสร้าง <ChevronRight /></>}
+          </button>
+        </div>
       </form>
       <CsvPreview job={job} />
     </div>
@@ -710,7 +737,15 @@ function Pagination({
   );
 }
 
-function RowsPanel({ job, onChanged }: { job: Job; onChanged(): Promise<void> }) {
+function RowsPanel({
+  job,
+  onChanged,
+  editable = false,
+}: {
+  job: Job;
+  onChanged(): Promise<void>;
+  editable?: boolean;
+}) {
   const [rows, setRows] = useState<TranslationRow[]>([]);
   const [total, setTotal] = useState(0);
   const [filter, setFilter] = useState("");
@@ -719,6 +754,9 @@ function RowsPanel({ job, onChanged }: { job: Job; onChanged(): Promise<void> })
   const [page, setPage] = useState(1);
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [editingRowId, setEditingRowId] = useState<string | null>(null);
+  const [draftTranslation, setDraftTranslation] = useState("");
+  const [savingRowId, setSavingRowId] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query), 250);
@@ -747,6 +785,35 @@ function RowsPanel({ job, onChanged }: { job: Job; onChanged(): Promise<void> })
     }
   }
 
+  function beginEdit(row: TranslationRow) {
+    setEditingRowId(row.id);
+    setDraftTranslation(row.translated_text ?? "");
+    setError("");
+  }
+
+  function cancelEdit() {
+    setEditingRowId(null);
+    setDraftTranslation("");
+  }
+
+  async function saveEdit(rowId: string) {
+    setSavingRowId(rowId);
+    setError("");
+    try {
+      await patch(`/api/jobs/${job.id}/rows/${rowId}`, {
+        translated_text: draftTranslation,
+      });
+      setEditingRowId(null);
+      setDraftTranslation("");
+      toast.success("บันทึกคำแปลที่แก้ไขแล้ว");
+      await Promise.all([load(), onChanged()]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "บันทึกคำแปลไม่สำเร็จ");
+    } finally {
+      setSavingRowId(null);
+    }
+  }
+
   return (
     <section className="panel rows-panel">
       <div className="panel-heading">
@@ -769,8 +836,10 @@ function RowsPanel({ job, onChanged }: { job: Job; onChanged(): Promise<void> })
           <tbody>
             {rows.map((row) => {
               const isExpanded = expanded.has(row.id);
+              const isEditing = editingRowId === row.id;
+              const isSaving = savingRowId === row.id;
               return (
-                <tr key={row.id}>
+                <tr key={row.id} className={isEditing ? "editing-row" : ""}>
                   <td data-label="#" className="row-number">{row.row_index + 1}</td>
                   <td data-label="ต้นฉบับ" className="text-cell" title={row.source_text}>
                     {row.source_text || "—"}
@@ -782,16 +851,49 @@ function RowsPanel({ job, onChanged }: { job: Job; onChanged(): Promise<void> })
                       </dl>
                     )}
                   </td>
-                  <td data-label="ผลลัพธ์" className="text-cell" title={row.translated_text ?? row.original_target}>{(row.translated_text ?? row.original_target) || "—"}
+                  <td data-label="ผลลัพธ์" className="text-cell" title={isEditing ? undefined : row.translated_text ?? row.original_target}>
+                    {isEditing ? (
+                      <div className="translation-editor">
+                        <textarea
+                          value={draftTranslation}
+                          onChange={(event) => setDraftTranslation(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Escape") cancelEdit();
+                            if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                              event.preventDefault();
+                              void saveEdit(row.id);
+                            }
+                          }}
+                          rows={5}
+                          autoFocus
+                          aria-label={`แก้คำแปลแถว ${row.row_index + 1}`}
+                        />
+                        <small>รักษา protected tokens และ control codes ให้ครบ · Ctrl+Enter เพื่อบันทึก</small>
+                      </div>
+                    ) : (
+                      (row.translated_text ?? row.original_target) || "—"
+                    )}
                     {row.last_error && isExpanded && <small className="row-error">{row.last_error}</small>}
                   </td>
                   <td data-label="สถานะ"><span className={`mini-status mini-${row.status}`}>{statusLabel(row.status)}</span></td>
                   <td className="row-actions">
-                    {row.last_error && <button className="icon-button" aria-label="ดูข้อผิดพลาด" aria-expanded={isExpanded} onClick={() => setExpanded((current) => {
+                    {isEditing ? (
+                      <>
+                        <button className="small-button" disabled={isSaving} onClick={() => void saveEdit(row.id)}>
+                          {isSaving ? <Spinner /> : <><Check /> บันทึก</>}
+                        </button>
+                        <button className="text-button" disabled={isSaving} onClick={cancelEdit}><X /> ยกเลิก</button>
+                      </>
+                    ) : (
+                      editable && row.status === "done" && row.translated_text !== null
+                        ? <button className="text-button edit-translation-button" onClick={() => beginEdit(row)}><Edit3 /> แก้คำแปล</button>
+                        : null
+                    )}
+                    {!isEditing && row.last_error && <button className="icon-button" aria-label="ดูข้อผิดพลาด" aria-expanded={isExpanded} onClick={() => setExpanded((current) => {
                       const next = new Set(current); isExpanded ? next.delete(row.id) : next.add(row.id); return next;
                     })}><ChevronDown className={isExpanded ? "rotated" : ""} /></button>}
-                    {row.status === "failed" && Boolean(row.retryable) && <button className="text-button" onClick={() => void retry(row.id)}>Retry</button>}
-                    {row.status === "failed" && !row.retryable && <small className="permanent-label">ข้อผิดพลาดถาวร</small>}
+                    {!isEditing && row.status === "failed" && Boolean(row.retryable) && <button className="text-button" onClick={() => void retry(row.id)}>Retry</button>}
+                    {!isEditing && row.status === "failed" && !row.retryable && <small className="permanent-label">ข้อผิดพลาดถาวร</small>}
                   </td>
                 </tr>
               );
@@ -911,7 +1013,7 @@ function ReviewView({ job, onChanged }: { job: Job; onChanged(): Promise<void> }
       </section>
       <ProgressPanel job={job} />
       <ScanPanel job={job} onChanged={onChanged} />
-      <RowsPanel job={job} onChanged={onChanged} />
+      <RowsPanel job={job} onChanged={onChanged} editable />
     </div>
   );
 }

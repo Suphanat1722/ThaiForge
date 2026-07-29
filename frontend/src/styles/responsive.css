@@ -5,6 +5,7 @@
   .workspace-content { width: calc(100% - 36px); }
   .workspace-header { grid-template-columns: 130px minmax(0, 1fr) auto; padding-inline: 18px; }
   .stage-nav { padding-inline: 18px; }
+  .config-workspace { grid-template-columns: 1fr; }
   .glossary-layout { grid-template-columns: 1fr; }
   .style-editor { position: static; }
   .glossary-setup { grid-template-columns: 1fr; }
@@ -55,6 +56,11 @@
   .panel-heading { align-items: flex-start; }
   .panel-actions { flex-wrap: wrap; justify-content: flex-end; }
   .form-grid, .definition-grid { grid-template-columns: 1fr; }
+  .config-fields, .context-column-options { grid-template-columns: 1fr; }
+  .config-section { padding-block: 18px; }
+  .config-actions { align-items: stretch; flex-direction: column; }
+  .config-actions > small { max-width: none; }
+  .config-actions .primary-button { width: 100%; }
   .compact-toolbar select { width: 100%; }
   .inline-add { grid-template-columns: 1fr; }
   .progress-dashboard { grid-template-columns: 1fr; }
@@ -84,6 +90,9 @@
   td.row-actions { display: flex; justify-content: flex-end; }
   td.row-actions::before { margin-right: auto; content: "จัดการ"; align-self: center; }
   td input { min-width: 0; }
+  .translation-editor { min-width: 0; }
+  .translation-editor textarea { min-height: 132px; }
+  .editing-row td.row-actions { flex-wrap: wrap; }
   .glossary-table, .rows-table { max-height: none; overflow: visible; border: 0; }
   .preview-panel .table-scroll { overflow: auto; }
   .preview-panel table { display: table; min-width: 700px; }

@@ -17,6 +17,7 @@ from .api_schemas import (
     GlossaryRulesUpdate,
     GlossaryUpdate,
     JobConfiguration,
+    ManualTranslationUpdate,
     RetryFailedRequest,
     ScanConfirm,
     StyleRulesUpdate,
@@ -47,11 +48,13 @@ from .repository import (
     quota_efficiency,
     replace_glossary_rules,
     replace_style_rules,
+    update_row_translation,
     update_glossary_entry,
 )
 from .quota import quota_usage
 from .scanner import confirm_scan, create_scan, get_scan
 from .style_defaults import DEFAULT_STYLE_RULES
+from .tokens import validate_protected_tokens
 
 
 configure_logging("api")
@@ -593,6 +596,45 @@ def rows(
 ) -> dict:
     _require_job(job_id)
     return paginate_rows(job_id, page, page_size, row_status, q)
+
+
+@app.patch("/api/jobs/{job_id}/rows/{row_id}")
+def edit_row_translation(
+    job_id: str,
+    row_id: str,
+    payload: ManualTranslationUpdate,
+) -> dict:
+    job = _require_job(job_id)
+    if job["status"] not in {"completed", "completed_with_errors", "paused"}:
+        raise _conflict("แก้คำแปลได้เมื่อหยุดงานหรืออยู่ในขั้นตรวจสอบเท่านั้น")
+    with connect() as connection:
+        row = connection.execute(
+            """
+            SELECT source_text, status FROM translation_rows
+            WHERE id = ? AND job_id = ?
+            """,
+            (row_id, job_id),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="ไม่พบแถวนี้")
+    if row["status"] != "done":
+        raise _conflict("แก้มือได้เฉพาะแถวที่แปลสำเร็จแล้ว")
+    valid, token_error = validate_protected_tokens(
+        row["source_text"], payload.translated_text
+    )
+    if not valid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Protected tokens/control codes ไม่ครบ: {token_error}",
+        )
+    try:
+        return update_row_translation(
+            job_id, row_id, payload.translated_text
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="ไม่พบแถวนี้") from exc
+    except ValueError as exc:
+        raise _conflict(str(exc)) from exc
 
 
 def _download_headers(filename: str) -> dict[str, str]:

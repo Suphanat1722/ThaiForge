@@ -60,5 +60,9 @@ class RetryFailedRequest(BaseModel):
     resume: bool = False
 
 
+class ManualTranslationUpdate(BaseModel):
+    translated_text: str = Field(max_length=100_000)
+
+
 class ScanConfirm(BaseModel):
     row_ids: list[str] | None = None
